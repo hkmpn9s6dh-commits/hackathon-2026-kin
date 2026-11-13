@@ -25,8 +25,13 @@ function check(name, ok, detail = '') {
   if (!ok) process.exitCode = 1;
 }
 
+const LIVE = process.env.KIN_URL ?? '';
+
 async function main() {
-  const server = await startServer(resolve(root, 'dist'), 4326);
+  // KIN_URL=https://... node scripts/e2e.mjs runs the same checks against the
+  // deployed demo, which is what a judge actually opens.
+  const server = LIVE ? null : await startServer(resolve(root, 'dist'), 4326);
+  process.stdout.write(LIVE ? `against ${LIVE}` : 'against the local bundle');
   const browser = await chromium.launch({ executablePath: CHROME });
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
 
@@ -42,7 +47,7 @@ async function main() {
   });
 
   try {
-    await page.goto(server.url, { waitUntil: 'networkidle' });
+    await page.goto(LIVE || server.url, { waitUntil: 'networkidle' });
     await page.waitForSelector('.chart-svg .person', { timeout: 30000 });
 
     const people = await page.locator('.chart-svg .person').count();
@@ -109,10 +114,15 @@ async function main() {
     check('nothing spills out of its column', overflow.panel <= 1 && overflow.body <= 1, JSON.stringify(overflow));
 
     check('no console errors', consoleErrors.length === 0, consoleErrors.slice(0, 2).join(' | '));
-    check('nothing is fetched from the network', foreign.length === 0, foreign.slice(0, 2).join(' | '));
+    const origin = LIVE ? new URL(LIVE).origin : 'http://127.0.0.1';
+    check(
+      'nothing is fetched from anywhere else',
+      foreign.filter((url) => !url.startsWith(origin)).length === 0,
+      foreign.filter((url) => !url.startsWith(origin)).slice(0, 2).join(' | '),
+    );
   } finally {
     await browser.close();
-    await server.close();
+    if (server) await server.close();
   }
 
   const failed = checks.filter((entry) => !entry.ok).length;
