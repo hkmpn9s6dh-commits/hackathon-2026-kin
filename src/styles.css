@@ -33,6 +33,8 @@ body {
 body {
   background: var(--paper);
   color: var(--ink);
+  background-image: radial-gradient(rgba(120, 100, 70, 0.05) 1px, transparent 1.2px);
+  background-size: 4px 4px;
   font-family: var(--serif);
   font-size: 16px;
   font-variant-numeric: lining-nums;
@@ -55,7 +57,9 @@ body {
   align-items: baseline;
   justify-content: space-between;
   gap: 28px;
-  padding: 28px 44px 20px;
+  padding: 22px 44px 20px;
+  background: var(--ink);
+  color: var(--paper);
 }
 
 .wordmark h1 {
@@ -67,14 +71,14 @@ body {
 }
 
 .wordmark .stop {
-  color: var(--thread);
+  color: #d4482f;
 }
 
 .tagline {
-  margin: 10px 0 0;
-  font-size: 14.5px;
+  margin: 8px 0 0;
+  font-size: 14px;
   font-style: italic;
-  color: var(--ink-soft);
+  color: rgba(243, 236, 221, 0.62);
   letter-spacing: 0.005em;
 }
 
@@ -127,6 +131,7 @@ button.primary {
   color: var(--paper-lit);
   background: var(--ink);
   padding: 8px 16px;
+  letter-spacing: 0.01em;
 }
 
 button.primary::after {
@@ -145,7 +150,6 @@ button.primary:hover {
   grid-template-columns: minmax(0, 1fr) var(--panel);
   flex: 1;
   min-height: 0;
-  border-top: 1px solid var(--ink);
 }
 
 .chart-shell {
@@ -779,6 +783,24 @@ dialog menu {
 
 /* ---------------- tools, focus, report ---------------- */
 
+.masthead button {
+  color: rgba(243, 236, 221, 0.7);
+}
+
+.masthead button:hover {
+  color: var(--paper);
+}
+
+.masthead button.primary {
+  background: var(--paper);
+  color: var(--ink);
+}
+
+.masthead button.primary:hover {
+  background: #fff;
+  color: var(--ink);
+}
+
 .tools {
   display: flex;
   align-items: center;
@@ -1013,4 +1035,320 @@ button.quiet {
 
 #report-dialog menu #export-ged:hover {
   color: var(--ink);
+}
+
+/* ---------------- the plate: a printed page, with margins that do work ---------------- */
+
+.plate {
+  position: absolute;
+  inset: 44px 16px 30px 12px;
+  pointer-events: none;
+  box-shadow:
+    inset 0 0 0 1px var(--rule),
+    inset 0 0 0 5px var(--paper),
+    inset 0 0 0 6px var(--rule-soft);
+}
+
+.chart {
+  position: relative;
+  z-index: 1;
+}
+
+.legend {
+  position: absolute;
+  right: 40px;
+  bottom: 12px;
+  margin: 0;
+  display: flex;
+  gap: 18px;
+  font-family: var(--mono);
+  font-size: 8.5px;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  z-index: 2;
+}
+
+.legend .lg {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.legend .sw {
+  display: inline-block;
+  width: 16px;
+}
+
+.legend .sw.path {
+  border-top: 2px solid var(--thread);
+}
+
+.legend .sw.line {
+  border-top: 1px solid var(--rule);
+}
+
+.legend .sw.pair {
+  height: 5px;
+  border-top: 1px solid var(--ink-soft);
+  border-bottom: 1px solid var(--ink-soft);
+}
+
+.legend .sw.life {
+  border-top: 3px solid #b9aa8d;
+}
+
+/* ---------------- lifetimes ---------------- */
+
+.life-track {
+  stroke: var(--rule-soft);
+  stroke-width: 3;
+}
+
+.life-fill {
+  stroke: #a9987b;
+  stroke-width: 3;
+}
+
+.person.is-path .life-fill {
+  stroke: var(--thread);
+}
+
+.person.is-subject .life-fill {
+  stroke: var(--ink);
+}
+
+.person:hover .life-track {
+  stroke: var(--rule);
+}
+
+/* the line draws itself when the answer changes */
+.is-path.descent,
+.is-path.union {
+  stroke-dasharray: 1 1;
+  animation: draw-thread 900ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+
+@keyframes draw-thread {
+  from {
+    stroke-dashoffset: 1;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .is-path.descent,
+  .is-path.union {
+    animation: none;
+    stroke-dasharray: none;
+  }
+}
+
+.gen-axis {
+  stroke: var(--rule);
+  stroke-width: 1;
+  opacity: 0.7;
+}
+
+.life-fill {
+  stroke: #a3927a;
+  stroke-width: 4;
+}
+
+.person:hover .life-fill {
+  stroke: var(--ink-soft);
+}
+
+/* ---------------- the chronology band: the same people, read by year ---------------- */
+
+.band-rule {
+  stroke: var(--ink);
+  stroke-width: 1;
+  opacity: 0.35;
+}
+
+.band-label,
+.band-gen,
+.band-tick {
+  font-family: var(--mono);
+  fill: var(--ink-soft);
+}
+
+.band-label {
+  font-size: 8.5px;
+  letter-spacing: 0.16em;
+  text-anchor: end;
+}
+
+.band-gen {
+  font-size: 8px;
+  letter-spacing: 0.1em;
+  text-anchor: middle;
+}
+
+.band-tick {
+  font-size: 7.5px;
+  letter-spacing: 0.06em;
+  text-anchor: middle;
+  fill: #9b8b72;
+}
+
+.band-grid {
+  stroke: var(--rule-soft);
+  stroke-width: 1;
+}
+
+.band-life {
+  stroke: #a3927a;
+  stroke-width: 3;
+}
+
+.band-life.is-subject {
+  stroke: var(--ink);
+}
+
+.band-life.is-path {
+  stroke: var(--thread);
+}
+
+.life-track,
+.life-fill {
+  display: none;
+}
+
+.band-row {
+  stroke: var(--rule-soft);
+  stroke-width: 1;
+  opacity: 0.6;
+}
+
+.band-life {
+  stroke-width: 2.5;
+}
+
+/* ---------------- the seals: one mark per person, so names are not the only weight ---------------- */
+
+.seal {
+  fill: var(--paper);
+  stroke: var(--ink);
+  stroke-width: 1;
+  opacity: 0.75;
+}
+
+.seal-initials {
+  font-family: var(--mono);
+  font-size: 8.5px;
+  letter-spacing: 0.08em;
+  fill: var(--ink-soft);
+  pointer-events: none;
+}
+
+.person:hover .seal {
+  stroke: var(--thread);
+  opacity: 1;
+}
+
+.person.is-path .seal {
+  stroke: var(--thread);
+  opacity: 1;
+  stroke-width: 1.6;
+}
+
+.person.is-path .seal-initials {
+  fill: var(--thread);
+}
+
+.person.is-subject .seal {
+  fill: var(--ink);
+  stroke: var(--ink);
+  opacity: 1;
+}
+
+.person.is-subject .seal-initials {
+  fill: var(--paper);
+}
+
+.kicker .mini {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 17px;
+  height: 17px;
+  border-radius: 50%;
+  border: 1px solid var(--ink-soft);
+  margin-right: 6px;
+  vertical-align: -3px;
+  letter-spacing: 0;
+}
+
+.kicker .mini i {
+  font-family: var(--mono);
+  font-size: 7.5px;
+  font-style: normal;
+  color: var(--ink-soft);
+}
+
+.kicker .long {
+  padding: 0 4px;
+}
+
+/* the chronology reads as a background reading of the chart: quiet, except
+   where the answer runs through it */
+.band-life {
+  stroke: #b3a48b;
+  stroke-width: 2;
+  opacity: 0.75;
+}
+
+.band-life.is-subject {
+  stroke: var(--ink);
+  stroke-width: 2.6;
+  opacity: 1;
+}
+
+.band-life.is-path {
+  stroke: var(--thread);
+  stroke-width: 2.6;
+  opacity: 1;
+}
+
+.band-row {
+  opacity: 0.35;
+}
+
+.band-tick {
+  fill: #a1907a;
+}
+
+/* ---------------- small screens ---------------- */
+
+.masthead button {
+  white-space: nowrap;
+}
+
+.masthead button.quiet {
+  color: rgba(243, 236, 221, 0.7);
+}
+
+.masthead button.quiet:hover {
+  color: var(--paper);
+}
+
+@media (max-width: 940px) {
+  .legend {
+    display: none;
+  }
+  .tools {
+    flex-wrap: wrap;
+    gap: 6px 14px;
+  }
+  .plate {
+    inset: 52px 10px 34px 8px;
+  }
+  .hint {
+    position: static;
+    padding: 6px 0 0 12px;
+  }
 }

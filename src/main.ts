@@ -27,7 +27,7 @@ import { computeGenerations, layoutChart, type Layout } from './layout';
 import { renderChart } from './render';
 import { parseAsk } from './ask';
 import { fromChart, parseGedcom, toChart } from './gedcom';
-import { analyse, commonAncestorsOf, livedTogether, longestChain, type Insights } from './insights';
+import { analyse, commonAncestorsOf, livedTogether, longestChain, surnameOf, type Insights } from './insights';
 import { busiestPerson, subgraph } from './focus';
 
 interface State {
@@ -54,6 +54,7 @@ const indexTitle = el<HTMLElement>('#index-title');
 const indexMeta = el<HTMLElement>('#index-meta');
 const hintEl = el<HTMLParagraphElement>('#hint');
 const runRight = el<HTMLElement>('#run-right');
+const runLeft = el<HTMLElement>('#run-left');
 const focusBox = el<HTMLElement>('#focus');
 const queryBox = el<HTMLDetailsElement>('#query');
 const cypherEl = el<HTMLElement>('#cypher');
@@ -120,6 +121,24 @@ function refresh(): void {
   paintIndex();
 }
 
+function yearsSpan(chart: Chart): { from: number; to: number } | undefined {
+  const born = chart.people.map((p) => p.born).filter((y): y is number => typeof y === 'number');
+  if (born.length === 0) return undefined;
+  const died = chart.people.map((p) => p.died).filter((y): y is number => typeof y === 'number');
+  return { from: Math.min(...born), to: Math.max(...(died.length > 0 ? died : born), Math.min(...born) + 1) };
+}
+
+function registerName(chart: Chart): string {
+  const counts = new Map<string, number>();
+  for (const person of chart.people) {
+    const surname = surnameOf(person.name);
+    if (!surname) continue;
+    counts.set(surname, (counts.get(surname) ?? 0) + 1);
+  }
+  const top = [...counts.entries()].sort((a, b) => b[1] - a[1])[0];
+  return top ? top[0] : '';
+}
+
 function draw(): void {
   if (!state) return;
   renderChart(chartEl, {
@@ -127,6 +146,7 @@ function draw(): void {
     layout: state.layout,
     path: state.path,
     subjects: state.subjects,
+    span: yearsSpan(state.chart),
   });
 
   const counts = state.subjects.length;
@@ -137,11 +157,13 @@ function draw(): void {
         ? 'Now pick a second name — or read the index on the right.'
         : 'Pick any name to start again.';
 
-  const born = state.chart.people.map((p) => p.born).filter((y): y is number => typeof y === 'number');
-  const span = born.length > 0 ? `${Math.min(...born)} – ${Math.max(...born)}` : '';
+  const years = yearsSpan(state.chart);
+  const span = years ? `${years.from} – ${years.to}` : '';
   const hidden = state.hidden > 0 ? `showing ${state.view.people.length} of ${state.chart.people.length}` : '';
   const generations = state.layout.generations.length;
   runRight.textContent = [span, `${generations} generations`, hidden].filter(Boolean).join(' · ');
+  const surname = registerName(state.chart);
+  runLeft.textContent = surname ? `Plate I · the ${surname} register` : 'Plate I · the register';
 
   focusBox.hidden = state.chart.people.length <= BIG;
   for (const button of focusBox.querySelectorAll('button')) {
@@ -244,6 +266,20 @@ function hopsHtml(path: string[], ancestorId: string): string {
   return parts.join(' <span class="sep">·</span> ');
 }
 
+function mini(person: Person): string {
+  const initials = person.name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((word) => word[0]?.toUpperCase() ?? '')
+    .join('');
+  return `<span class="mini"><i>${esc(initials)}</i></span>`;
+}
+
+function pairKicker(a: Person, b: Person): string {
+  return `<p class="kicker">${mini(a)}${esc(a.name)} <span class="long">⟶</span> ${mini(b)}${esc(b.name)}</p>`;
+}
+
 function metaLine(parts: string[]): string {
   return `<p class="meta">${parts.join('<i>·</i>')}</p>`;
 }
@@ -273,7 +309,7 @@ function renderBlood(v: BloodVerdict): void {
 
   const meta = [`${v.up} up`, `${v.down} down`, shared].filter((part) => !part.startsWith('0 '));
   answerEl.innerHTML = `
-    <p class="kicker">${esc(v.a.name)} <span class="long">⟶</span> ${esc(v.b.name)}</p>
+    ${pairKicker(v.a, v.b)}
     <p class="term${v.forward.term.length >= 22 ? ' tight' : ''}">${esc(v.b.name)} is ${esc(v.a.name)}’s <em>${esc(v.forward.term)}</em>.</p>
     <p class="why">${sentence}${overlapNote(v.a, v.b)}</p>
     ${metaLine(meta)}
@@ -286,7 +322,7 @@ function renderMarriage(v: MarriageVerdict): void {
     ? `${esc(v.a.name)} is married to <b>${esc(v.anchorA.name)}</b>, and ${esc(v.b.name)} is ${esc(v.anchorA.name)}’s ${esc(v.term.term)}.`
     : `${esc(v.b.name)} is married to <b>${esc(v.anchorB.name)}</b>, who is ${esc(v.a.name)}’s ${esc(v.term.term)}.`;
   answerEl.innerHTML = `
-    <p class="kicker">${esc(v.a.name)} <span class="long">⟶</span> ${esc(v.b.name)}</p>
+    ${pairKicker(v.a, v.b)}
     <p class="term">No shared ancestor — <em>a tie by marriage</em>.</p>
     <p class="why">${clause}${overlapNote(v.a, v.b)}</p>
     ${metaLine(['by marriage', 'no shared blood'])}
@@ -363,7 +399,7 @@ function answerPair(): void {
   } else if (v.kind === 'shared-partner') {
     state.path = [v.a.id, v.hinge.id, v.b.id];
     answerEl.innerHTML = `
-      <p class="kicker">${esc(v.a.name)} <span class="long">⟶</span> ${esc(v.b.name)}</p>
+      ${pairKicker(v.a, v.b)}
       <p class="term">Both married to <em>${esc(v.hinge.name)}</em>.</p>
       <p class="why">No shared ancestor either — the only line between them is a partnership they have in common.</p>
       ${metaLine(['by marriage'])}
@@ -377,7 +413,7 @@ function answerPair(): void {
   } else {
     state.path = [];
     answerEl.innerHTML = `
-      <p class="kicker">${esc(v.a.name)} <span class="long">⟶</span> ${esc(v.b.name)}</p>
+      ${pairKicker(v.a, v.b)}
       <p class="term">Nothing connects them — <em>yet</em>.</p>
       <p class="note">Add the missing parent or partner and the line will appear.</p>`;
   }

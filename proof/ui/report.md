@@ -1,6 +1,6 @@
 # UI measurement — Kin
 
-Generated 2026-11-14T05:58:53.404Z on a 1440×900 viewport, device scale 1.
+Generated 2026-11-14T06:27:26.390Z on a 1440×900 viewport, device scale 1.
 
 | rule | selector | measured | floor | verdict |
 | --- | --- | --- | --- | --- |

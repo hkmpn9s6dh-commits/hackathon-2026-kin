@@ -21,6 +21,8 @@ export interface RenderOptions {
   path: string[];
   /** the two people being compared */
   subjects: string[];
+  /** the years every lifetime bar is scaled against */
+  span?: { from: number; to: number };
 }
 
 function esc(value: string): string {
@@ -39,7 +41,7 @@ function dates(born?: number, died?: number): string {
 }
 
 export function renderChart(root: Element, options: RenderOptions): void {
-  const { chart, layout, path, subjects } = options;
+  const { chart, layout, path, subjects, span } = options;
   const onPath = new Set(path);
   const adjacent = new Map<string, Set<string>>();
   for (let i = 0; i < path.length - 1; i += 1) {
@@ -75,7 +77,10 @@ export function renderChart(root: Element, options: RenderOptions): void {
 
   const parts: string[] = [];
   const W = layout.width;
-  const H = layout.height;
+  const rowCount = Math.max(1, layout.rows.length);
+  const bandTop = PAD_Y + (rowCount - 1) * ROW + 74;
+  const bandH = rowCount * 18 + 30;
+  const H = span ? bandTop + bandH + 18 : layout.height;
 
   parts.push(
     `<svg class="chart-svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="family chart">`,
@@ -83,6 +88,9 @@ export function renderChart(root: Element, options: RenderOptions): void {
 
   // generation numerals in the gutter, the way a printed pedigree marks its rows
   const ROMAN = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X'];
+  const firstY = PAD_Y;
+  const lastY = PAD_Y + Math.max(0, layout.rows.length - 1) * ROW;
+  parts.push(`<line class="gen-axis" x1="38" y1="${firstY}" x2="38" y2="${lastY}" />`);
   for (let row = 0; row < layout.rows.length; row += 1) {
     const y = PAD_Y + row * ROW;
     const absolute = layout.generations[row] ?? row;
@@ -106,13 +114,13 @@ export function renderChart(root: Element, options: RenderOptions): void {
     const right = Math.max(x0, ...childXs);
     const busY = bus.busY;
     const top = bus.y + 26;
-    const bottom = bus.y + ROW - 34;
+    const bottom = bus.y + ROW - 58;
     const segments = [
       `M ${x0} ${top} V ${busY}`,
       `M ${left} ${busY} H ${right}`,
       ...childXs.map((x) => `M ${x} ${busY} V ${bottom}`),
     ];
-    parts.push(`<path class="${cls}" d="${segments.join(' ')}" />`);
+    parts.push(`<path class="${cls}" pathLength="1" d="${segments.join(' ')}" />`);
   }
 
   // couples
@@ -128,8 +136,8 @@ export function renderChart(root: Element, options: RenderOptions): void {
     const strong = linked(leftPerson.person.id, rightPerson.person.id);
     const cls = strong ? 'union is-path' : 'union';
     parts.push(
-      `<path class="${cls}" d="M ${x1} ${leftPerson.y - 3} H ${x2}" />`,
-      `<path class="${cls}" d="M ${x1} ${leftPerson.y + 3} H ${x2}" />`,
+      `<path class="${cls}" pathLength="1" d="M ${x1} ${leftPerson.y - 3} H ${x2}" />`,
+      `<path class="${cls}" pathLength="1" d="M ${x1} ${leftPerson.y + 3} H ${x2}" />`,
     );
     void mid;
   }
@@ -146,14 +154,56 @@ export function renderChart(root: Element, options: RenderOptions): void {
     if (isSubject) classes.push('is-subject');
     if (isOnPath) classes.push('is-path');
     const stamp = dates(person.born, person.died);
+    const initials = person.name
+      .split(/\s+/)
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((word) => word[0]?.toUpperCase() ?? '')
+      .join('');
     parts.push(
       `<g class="${classes.join(' ')}" data-id="${esc(person.id)}" data-name="${esc(person.name)}" transform="translate(${x} ${y})">`,
-      `<rect class="hit" x="${-HIT}" y="-40" width="${HIT * 2}" height="76" />`,
+      `<rect class="hit" x="${-HIT}" y="-62" width="${HIT * 2}" height="98" />`,
+      `<circle class="seal" cx="0" cy="-44" r="13" />`,
+      `<text class="seal-initials" x="0" y="-40" text-anchor="middle">${esc(initials)}</text>`,
       `<line class="plinth" x1="${-RULE}" y1="0" x2="${RULE}" y2="0" />`,
       `<text class="pname" x="0" y="-13" text-anchor="middle">${esc(person.name)}</text>`,
-      stamp ? `<text class="pdates" x="0" y="21" text-anchor="middle">${stamp}</text>` : '',
+      stamp ? `<text class="pdates" x="0" y="18" text-anchor="middle">${stamp}</text>` : '',
       `</g>`,
     );
+  }
+
+  if (span) {
+    const left = 96;
+    const right = W - 56;
+    const total = Math.max(1, span.to - span.from);
+    const at = (year: number): number => left + ((year - span.from) / total) * (right - left);
+
+    parts.push(`<g class="band">`);
+    parts.push(`<line class="band-rule" x1="${left}" y1="${bandTop - 14}" x2="${right}" y2="${bandTop - 14}" />`);
+    parts.push(`<text class="band-label" x="${left - 18}" y="${bandTop - 10}">time</text>`);
+
+    const step = total > 300 ? 100 : total > 160 ? 50 : total > 80 ? 20 : 10;
+    for (let year = Math.ceil(span.from / step) * step; year <= span.to; year += step) {
+      const x = at(year);
+      parts.push(`<line class="band-grid" x1="${x}" y1="${bandTop - 8}" x2="${x}" y2="${bandTop + bandH - 16}" />`);
+      parts.push(`<text class="band-tick" x="${x}" y="${bandTop + bandH - 2}">${year}</text>`);
+    }
+
+    for (let row = 0; row < layout.rows.length; row += 1) {
+      const y = bandTop + row * 18 + 6;
+      parts.push(`<line class="band-row" x1="${left - 46}" y1="${y + 6}" x2="${right}" y2="${y + 6}" />`);
+      const absolute = layout.generations[row] ?? row;
+      parts.push(`<text class="band-gen" x="${left - 34}" y="${y + 4}">${ROMAN[absolute] ?? absolute + 1}</text>`);
+      for (const id of layout.rows[row] ?? []) {
+        const person = chart.people.find((p) => p.id === id);
+        if (!person || person.born === undefined) continue;
+        const x1 = at(person.born);
+        const x2 = at(Math.max(person.died ?? span.to, person.born + 1));
+        const cls = onPath.has(id) ? 'band-life is-path' : subjects.includes(id) ? 'band-life is-subject' : 'band-life';
+        parts.push(`<line class="${cls}" x1="${x1}" y1="${y}" x2="${Math.max(x2, x1 + 2)}" y2="${y}" />`);
+      }
+    }
+    parts.push(`</g>`);
   }
 
   parts.push('</svg>');
