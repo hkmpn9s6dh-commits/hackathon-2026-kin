@@ -113,6 +113,75 @@ async function main() {
     });
     check('nothing spills out of its column', overflow.panel <= 1 && overflow.body <= 1, JSON.stringify(overflow));
 
+    // --- import a file, edit, remove, share ---
+
+    const tiny = [
+      '0 HEAD',
+      '0 @A@ INDI',
+      '1 NAME Nora /Vale/',
+      '1 SEX F',
+      '1 BIRT',
+      '2 DATE 1950',
+      '0 @B@ INDI',
+      '1 NAME Sam /Vale/',
+      '1 SEX M',
+      '1 BIRT',
+      '2 DATE 1949',
+      '0 @C@ INDI',
+      '1 NAME Iva /Vale/',
+      '1 SEX F',
+      '0 @F1@ FAM',
+      '1 HUSB @B@',
+      '1 WIFE @A@',
+      '1 CHIL @C@',
+      '0 TRLR',
+      '',
+    ].join('\n');
+
+    await page.setInputFiles('#ged-file', {
+      name: 'tiny.ged',
+      mimeType: 'text/plain',
+      buffer: Buffer.from(tiny, 'utf8'),
+    });
+    await page.waitForTimeout(600);
+    const imported = await page.locator('.chart-svg .person').count();
+    check('a GEDCOM file replaces the chart', imported === 3, `${imported} people`);
+    const runHead = await page.locator('#run-right').innerText();
+    check('the running head follows the file', /1950/.test(runHead), runHead);
+
+    // the index still works on the imported chart
+    await page.click('.ledger button[data-pick="C"]');
+    const profile = await page.locator('#answer').innerText();
+    check('the imported people are answers, not pictures', /child of/i.test(profile), profile.split('\n')[1] ?? '');
+
+    // edit
+    await page.click('[data-person-act="edit"]');
+    await page.fill('#f-name', 'Iva Vale-Ross');
+    await page.click('#add-form button[value="add"]');
+    await page.waitForTimeout(300);
+    const renamed = await page.locator('.chart-svg .person[data-id="C"] .pname').textContent();
+    check('editing a name redraws the chart', renamed === 'Iva Vale-Ross', renamed);
+
+    // shareable state
+    const url = page.url();
+    check('the pair is in the address bar', /[?&]a=/.test(url), url.split('?')[1] ?? '');
+
+    // remove
+    page.once('dialog', (dialog) => dialog.accept());
+    await page.click('[data-person-act="remove"]');
+    await page.waitForTimeout(400);
+    const afterRemove = await page.locator('.chart-svg .person').count();
+    check('removing a person takes their links with them', afterRemove === 2, `${afterRemove} people`);
+
+    // report
+    await page.click('[data-act="report"]');
+    await page.waitForTimeout(300);
+    const report = await page.locator('#report').innerText();
+    check('the report opens with facts', /people/i.test(report) && /generations/i.test(report), report.split('\n')[0]);
+    const dialogOpen = await page.locator('#report-dialog').evaluate((node) => node.open);
+    check('the report is a real dialog', dialogOpen === true);
+    await page.keyboard.press('Escape');
+
     check('no console errors', consoleErrors.length === 0, consoleErrors.slice(0, 2).join(' | '));
     const origin = LIVE ? new URL(LIVE).origin : 'http://127.0.0.1';
     check(

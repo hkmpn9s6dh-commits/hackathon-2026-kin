@@ -36,8 +36,8 @@ step "unit tests"
 TEST_LOG="$TEMP/vitest.log"
 NO_COLOR=1 FORCE_COLOR=0 npx vitest run 2>&1 | tee "$TEST_LOG"
 PASSED=$(sed -E 's/\x1b\[[0-9;]*m//g' "$TEST_LOG" | grep -Eo 'Tests +[0-9]+ passed' | grep -Eo '[0-9]+' | tail -1 || true)
-if [ -z "${PASSED:-}" ] || [ "$PASSED" -lt 60 ]; then
-  echo "expected at least 60 passing tests, counted ${PASSED:-0} — a file probably failed to load" >&2
+if [ -z "${PASSED:-}" ] || [ "$PASSED" -lt 85 ]; then
+  echo "expected at least 85 passing tests, counted ${PASSED:-0} — a file probably failed to load" >&2
   exit 1
 fi
 echo "$PASSED tests passed"

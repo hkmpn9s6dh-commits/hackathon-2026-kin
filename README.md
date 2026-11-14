@@ -61,8 +61,32 @@ Everything, from a clean clone to the verdict:
 bash scripts/verify.sh
 ```
 
-That runs the type check, 72 unit tests, the build, 14 browser checks against
+That runs the type check, 89 unit tests, the build, 22 browser checks against
 the built bundle, and the UI measurement. Exit code is the answer.
+
+## It holds a real tree, not just ours
+
+`Import GEDCOM` reads the format every genealogy program writes. The sample
+file used in the tests is **1,330 people with 2,540 parent links**, and a
+1,089-person village imports and paints in about a second: parsing 9 ms,
+inserting 129 ms, laying the whole thing out 11 ms. The worst case for one
+question on that file — two people with no shared ancestor, so the whole graph
+has to be searched — is about 80 ms.
+
+Large files open **focused**: the selected person plus everyone within two
+generations, with the absolute generation numbers kept so the rows still line
+up. `all · 2 · 3` switches it; the running head says how many are on screen.
+
+`Report` turns the graph into the answers people actually want, none of which
+are visible by eye:
+
+- **Cousins who married** — every partnership where the two share an ancestor,
+  with the term (first cousin, second cousin once removed). One Cypher query
+  for the whole chart.
+- **Longest unbroken line** — the deepest parent chain, as a list of names.
+- **Who connects them?** — pick two or three people, get the closest shared
+  ancestor and how far each of them is from it.
+- **Missing** — who has no birth year, who is not connected to anything.
 
 ## What it does
 
@@ -82,9 +106,11 @@ the built bundle, and the UI measurement. Exit code is the answer.
   partnerships and names the blood tie on the far side.
 - **One name is a question too.** "Who is Ada's mother" lists parents,
   children and partners.
-- **Editable.** Add a person with a mother, a father and a partner; the chart
-  re-lays itself out and every answer is re-derived. Save the chart as JSON,
-  drop it back in to restore.
+- **Editable.** Add, edit and remove people; the chart re-lays itself out and
+  every answer is re-derived. Import and export GEDCOM, or save the chart as
+  JSON and drop it back in to restore.
+- **Shareable.** The pair you are asking about is in the address bar — send
+  someone `?a=ada&b=theo` and they open on the same question.
 - **The query is on screen.** Under every answer there is a disclosure with the
   exact Cypher that produced it and how long it took.
 
@@ -105,6 +131,9 @@ Nobody in it is real.
 | `src/render.ts` | The printed-pedigree look: names on hairline rules, one colour for the answer. |
 | `src/db.ts` | The embedded engine, opened once. |
 | `src/ask.ts` | A pattern match, not a model: the chart is a closed world. |
+| `src/gedcom.ts` | GEDCOM 5.5.1 in and out. The round trip is a test. |
+| `src/insights.ts` | Cousins who married, the longest line, shared ancestors, missing data. |
+| `src/focus.ts` | The neighbourhood of one person, for files too big to draw whole. |
 | `src/main.ts` | Wiring. |
 
 Relate features in use: embedded WebAssembly engine with no server, openCypher

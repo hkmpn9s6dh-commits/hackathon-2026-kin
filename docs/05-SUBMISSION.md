@@ -29,6 +29,8 @@ A family chart that answers "how are we related?" in words, and draws the answer
 Family trees are the most personal data most people own, and every app that holds them wants an account and a server. Kin takes the opposite bet: the whole graph database ships as WebAssembly, so the chart lives in the tab and nothing is ever fetched.
 
 You ask a question in plain words — "how are Milo and Theo related?" — and Kin answers with the kinship term (second cousin once removed), the ancestor where the two lines meet, how many generations each side climbs, and how many ancestors they share. Then it draws that path on the chart in vermilion, so the answer is a line you can follow rather than a sentence you have to trust.
+
+It is not a demo with sixteen people in it. Import GEDCOM — the format every genealogy program writes — and the app opens on your own file: a 1,089-person village imports and paints in about a second. Big files open focused on one person's neighbourhood, with the generation numbers kept absolute. Report answers the four questions nobody can see by eye: which couples share an ancestor (one Cypher query for the whole chart), the longest unbroken parent line, who connects any two or three people, and what is missing.
 ```
 
 **How we built it（描述第二段，必须写技术栈）**
@@ -58,7 +60,7 @@ Naming a relationship is a much sharper problem than drawing one. "Second cousin
 **What's next**
 
 ```
-GEDCOM import, so an existing tree can be dropped in; persistence through Relate's OPFS store so the chart survives a reload without a file; and multi-hop in-law naming beyond one marriage.
+Persistence through Relate's OPFS store, so the chart survives a reload without a file; multi-hop in-law naming beyond one marriage; and lazy layout so a ten-thousand-person file opens as fast as a thousand-person one.
 ```
 
 ## 2. 别的字段

@@ -1,6 +1,10 @@
 /**
  * Wiring: the chart on the left, the answer on the right, and the one
  * interaction the whole app is built around — pick two names, read the line.
+ *
+ * Everything the chart shows comes out of one graph in one embedded store, so
+ * importing a file, adding a person and asking a question all end in the same
+ * place: reload the chart, re-derive every answer.
  */
 
 import './styles.css';
@@ -15,19 +19,26 @@ import {
   neighbours,
   type BloodVerdict,
   type Chart,
+  type Edge,
   type MarriageVerdict,
   type Person,
 } from './relatives';
-import { layoutChart, type Layout } from './layout';
+import { computeGenerations, layoutChart, type Layout } from './layout';
 import { renderChart } from './render';
 import { parseAsk } from './ask';
+import { fromChart, parseGedcom, toChart } from './gedcom';
+import { analyse, commonAncestorsOf, livedTogether, longestChain, type Insights } from './insights';
+import { busiestPerson, subgraph } from './focus';
 
 interface State {
   db: Db;
   chart: Chart;
+  view: Chart;
   layout: Layout;
   subjects: string[];
   path: string[];
+  focus: number | 'all';
+  hidden: number;
 }
 
 const el = <T extends Element>(selector: string): T => {
@@ -43,6 +54,7 @@ const indexTitle = el<HTMLElement>('#index-title');
 const indexMeta = el<HTMLElement>('#index-meta');
 const hintEl = el<HTMLParagraphElement>('#hint');
 const runRight = el<HTMLElement>('#run-right');
+const focusBox = el<HTMLElement>('#focus');
 const queryBox = el<HTMLDetailsElement>('#query');
 const cypherEl = el<HTMLElement>('#cypher');
 const queryMeta = el<HTMLParagraphElement>('#query-meta');
@@ -50,8 +62,15 @@ const askForm = el<HTMLFormElement>('#ask');
 const askInput = el<HTMLInputElement>('#q');
 const dialog = el<HTMLDialogElement>('#add-dialog');
 const addForm = el<HTMLFormElement>('#add-form');
+const gedFile = el<HTMLInputElement>('#ged-file');
+const reportDialog = el<HTMLDialogElement>('#report-dialog');
+const reportEl = el<HTMLElement>('#report');
 
 let state: State | null = null;
+let editing: string | null = null;
+
+const BIG = 26;
+const NOW = new Date().getFullYear();
 
 function esc(value: string): string {
   return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -72,13 +91,31 @@ function numberWord(n: number): string {
 
 /* ---------------- the chart ---------------- */
 
+function rebuildView(): void {
+  if (!state) return;
+  const chart = state.chart;
+  const center = state.subjects[0] ?? busiestPerson(chart);
+
+  if (state.focus === 'all' || chart.people.length <= BIG || !center) {
+    state.view = chart;
+    state.layout = layoutChart(chart);
+    state.hidden = 0;
+    return;
+  }
+
+  const focused = subgraph(chart, center, state.focus);
+  state.view = focused.chart;
+  state.layout = layoutChart(focused.chart, computeGenerations(chart));
+  state.hidden = focused.hidden;
+}
+
 function refresh(): void {
   if (!state) return;
   const chart = loadChart(state.db);
   state.chart = chart;
-  state.layout = layoutChart(chart);
   state.subjects = state.subjects.filter((id) => findPerson(chart, id));
   if (state.subjects.length < 2) state.path = [];
+  rebuildView();
   draw();
   paintIndex();
 }
@@ -86,7 +123,7 @@ function refresh(): void {
 function draw(): void {
   if (!state) return;
   renderChart(chartEl, {
-    chart: state.chart,
+    chart: state.view,
     layout: state.layout,
     path: state.path,
     subjects: state.subjects,
@@ -102,7 +139,30 @@ function draw(): void {
 
   const born = state.chart.people.map((p) => p.born).filter((y): y is number => typeof y === 'number');
   const span = born.length > 0 ? `${Math.min(...born)} – ${Math.max(...born)}` : '';
-  runRight.textContent = [span, `${state.layout.rows.length} generations`].filter(Boolean).join(' · ');
+  const hidden = state.hidden > 0 ? `showing ${state.view.people.length} of ${state.chart.people.length}` : '';
+  const generations = state.layout.generations.length;
+  runRight.textContent = [span, `${generations} generations`, hidden].filter(Boolean).join(' · ');
+
+  focusBox.hidden = state.chart.people.length <= BIG;
+  for (const button of focusBox.querySelectorAll('button')) {
+    const value = button.getAttribute('data-focus');
+    const on = value === String(state.focus);
+    button.classList.toggle('on', on);
+  }
+
+  syncUrl();
+}
+
+function syncUrl(): void {
+  if (!state) return;
+  const params = new URLSearchParams();
+  const [a, b] = state.subjects;
+  if (a) params.set('a', a);
+  if (b) params.set('b', b);
+  if (state.focus !== 'all') params.set('focus', String(state.focus));
+  const query = params.toString();
+  const next = `${location.pathname}${query ? `?${query}` : ''}`;
+  history.replaceState(null, '', next);
 }
 
 /* ---------------- the index: roster when idle, ledger when one name is held ---------------- */
@@ -119,7 +179,7 @@ function paintIndex(): void {
     ledgerEl.innerHTML = people
       .map(
         (person) =>
-          `<li data-id="${esc(person.id)}"><button type="button" data-pick="${esc(person.id)}"><span class="who">${esc(person.name)}</span><span class="leader"></span><span class="rel">${person.born ?? ''}</span></button></li>`,
+          `<li data-id="${esc(person.id)}"><button type="button" data-pick="${esc(person.id)}"><span class="who">${esc(person.name)}</span><span class="leader"></span><span class="rel">${person.born ? `b. ${person.born}` : ''}</span></button></li>`,
       )
       .join('');
     return;
@@ -188,6 +248,14 @@ function metaLine(parts: string[]): string {
   return `<p class="meta">${parts.join('<i>·</i>')}</p>`;
 }
 
+function overlapNote(a: Person, b: Person): string {
+  const years = livedTogether(a, b, NOW);
+  if (years === null) return '';
+  return years === 0
+    ? ' They never overlapped.'
+    : ` They were alive at the same time for ${years} ${years === 1 ? 'year' : 'years'}.`;
+}
+
 function renderBlood(v: BloodVerdict): void {
   const shared = v.shared === 1 ? 'one ancestor in common' : `${v.shared} ancestors in common`;
   const sameParentNote =
@@ -207,20 +275,20 @@ function renderBlood(v: BloodVerdict): void {
   answerEl.innerHTML = `
     <p class="kicker">${esc(v.a.name)} <span class="long">⟶</span> ${esc(v.b.name)}</p>
     <p class="term${v.forward.term.length >= 22 ? ' tight' : ''}">${esc(v.b.name)} is ${esc(v.a.name)}’s <em>${esc(v.forward.term)}</em>.</p>
-    <p class="why">${sentence}</p>
+    <p class="why">${sentence}${overlapNote(v.a, v.b)}</p>
     ${metaLine(meta)}
     ${legsHtml(v.path, v.up, v.ancestor.id)}
     <p class="mirror">Which makes ${esc(firstName(v.a))} ${esc(v.b.name)}’s ${esc(v.backward.term)}.</p>`;
 }
 
-function renderMarriage(v: MarriageVerdict, elapsed: number): void {
+function renderMarriage(v: MarriageVerdict): void {
   const clause = v.aLinked
     ? `${esc(v.a.name)} is married to <b>${esc(v.anchorA.name)}</b>, and ${esc(v.b.name)} is ${esc(v.anchorA.name)}’s ${esc(v.term.term)}.`
     : `${esc(v.b.name)} is married to <b>${esc(v.anchorB.name)}</b>, who is ${esc(v.a.name)}’s ${esc(v.term.term)}.`;
   answerEl.innerHTML = `
     <p class="kicker">${esc(v.a.name)} <span class="long">⟶</span> ${esc(v.b.name)}</p>
     <p class="term">No shared ancestor — <em>a tie by marriage</em>.</p>
-    <p class="why">${clause} One side is blood, the other arrives by a partnership, and the chart draws both the same way.</p>
+    <p class="why">${clause}${overlapNote(v.a, v.b)}</p>
     ${metaLine(['by marriage', 'no shared blood'])}
     <p class="hops">${hopsHtml(v.path, '')}</p>`;
 }
@@ -247,13 +315,37 @@ function renderProfile(person: Person): void {
     <p class="term">${esc(person.name)}</p>
     <p class="why">${lines.length > 0 ? capitalise(lines.join('; ')) : 'Nobody connected to them yet.'}</p>
     ${metaLine([`${rows.filter((r) => r.kind === 'blood').length} by blood`, `${rows.filter((r) => r.kind === 'marriage').length} by marriage`])}
+    <p class="actions"><button type="button" data-person-act="edit" data-id="${esc(person.id)}">Edit</button><button type="button" data-person-act="remove" data-id="${esc(person.id)}">Remove</button></p>
     <p class="mirror">Pick a second name to ask how they are related.</p>`;
   queryBox.hidden = true;
 }
 
+function twoNames(): [string, string] | null {
+  if (!state) return null;
+  const people = state.chart.people;
+  if (people.length < 2) return null;
+  const first = people[0] as Person;
+  // a second name that is actually related to the first, if we can find one
+  const related = people.slice(1).find((person) => {
+    const verdict = findRelationship(state?.db as Db, first.id, person.id).verdict;
+    return verdict.kind === 'blood' || verdict.kind === 'marriage';
+  });
+  const second = related ?? (people[1] as Person);
+  return [firstName(first), firstName(second)];
+}
+
 function renderPrompt(): void {
-  answerEl.innerHTML = `<p class="note">Two names, one question. Try <b>Ada</b> and <b>Theo</b> — or type it: “how are Milo and Rosa related?”</p>`;
+  if (!state) return;
+  const count = state.chart.people.length;
+  const pair = twoNames();
+  answerEl.innerHTML =
+    count > 1 && pair
+      ? `<p class="note">Two names, one question. Try <b>${esc(pair[0])}</b> and <b>${esc(pair[1])}</b> — or type a question below.</p>`
+      : count === 1
+        ? `<p class="note">One person so far. Add another, or import a file.</p>`
+        : `<p class="note">The chart is empty. Import a GEDCOM file, or start from the sample family.</p>`;
   queryBox.hidden = true;
+  askInput.placeholder = pair ? `How are ${pair[0]} and ${pair[1]} related?` : 'Ask about two people';
 }
 
 function answerPair(): void {
@@ -267,7 +359,7 @@ function answerPair(): void {
     renderBlood(v);
   } else if (v.kind === 'marriage') {
     state.path = v.path;
-    renderMarriage(v, answer.elapsedMs);
+    renderMarriage(v);
   } else if (v.kind === 'shared-partner') {
     state.path = [v.a.id, v.hinge.id, v.b.id];
     answerEl.innerHTML = `
@@ -307,6 +399,7 @@ function select(id: string): void {
   if (at !== -1) {
     state.subjects.splice(at, 1);
     state.path = [];
+    rebuildView();
     draw();
     paintIndex();
     const remaining = state.subjects[0];
@@ -321,6 +414,7 @@ function select(id: string): void {
 
   if (state.subjects.length >= 2) state.subjects = [];
   state.subjects.push(id);
+  rebuildView();
   draw();
   paintIndex();
   if (state.subjects.length === 2) {
@@ -336,6 +430,7 @@ function runAsk(text: string): void {
 
   if (ask.intent === 'relationship') {
     state.subjects = [ask.a, ask.b];
+    rebuildView();
     draw();
     paintIndex();
     answerPair();
@@ -349,6 +444,7 @@ function runAsk(text: string): void {
     const which = ask.which === 'parents' ? n.parents : ask.which === 'children' ? n.children : n.partners;
     state.subjects = [ask.who];
     state.path = [];
+    rebuildView();
     draw();
     paintIndex();
     answerEl.innerHTML = `
@@ -385,27 +481,41 @@ function slug(name: string, taken: Set<string>): string {
   return id;
 }
 
-function fillSelect(target: HTMLSelectElement, people: Person[]): void {
+function fillSelect(target: HTMLSelectElement, people: Person[], selected?: string): void {
   target.innerHTML = [`<option value="">—</option>`]
     .concat(
       people
         .slice()
         .sort((a, b) => a.name.localeCompare(b.name))
-        .map((person) => `<option value="${esc(person.id)}">${esc(person.name)}</option>`),
+        .map(
+          (person) =>
+            `<option value="${esc(person.id)}"${person.id === selected ? ' selected' : ''}>${esc(person.name)}</option>`,
+        ),
     )
     .join('');
 }
 
-function openAddDialog(): void {
+function openPersonDialog(person?: Person): void {
   if (!state) return;
+  editing = person?.id ?? null;
   addForm.reset();
   fillSelect(el<HTMLSelectElement>('#f-mother'), state.chart.people);
   fillSelect(el<HTMLSelectElement>('#f-father'), state.chart.people);
   fillSelect(el<HTMLSelectElement>('#f-partner'), state.chart.people);
+  el<HTMLElement>('#add-title').textContent = person ? 'Edit this person' : 'Add a person';
+  el<HTMLElement>('#add-note').textContent = person
+    ? 'Relationships are edited on the chart: remove the person and add them again to change parents.'
+    : '';
+  if (person) {
+    el<HTMLInputElement>('#f-name').value = person.name;
+    el<HTMLSelectElement>('#f-sex').value = person.sex;
+    el<HTMLInputElement>('#f-born').value = person.born ? String(person.born) : '';
+    el<HTMLInputElement>('#f-died').value = person.died ? String(person.died) : '';
+  }
   dialog.showModal();
 }
 
-function addPerson(): void {
+function savePerson(): void {
   if (!state) return;
   const data = new FormData(addForm);
   const name = String(data.get('name') ?? '').trim();
@@ -413,10 +523,26 @@ function addPerson(): void {
   const sex = String(data.get('sex') ?? 'X');
   const born = String(data.get('born') ?? '').trim();
   const died = String(data.get('died') ?? '').trim();
+
+  if (editing) {
+    state.db.run('MATCH (p:Person {id: $id}) SET p.name = $name, p.sex = $sex, p.born = $born, p.died = $died', {
+      id: editing,
+      name,
+      sex,
+      born: born ? Number(born) : null,
+      died: died ? Number(died) : null,
+    });
+    const id = editing;
+    editing = null;
+    refresh();
+    const person = findPerson(state.chart, id);
+    if (person) renderProfile(person);
+    return;
+  }
+
   const mother = String(data.get('mother') ?? '');
   const father = String(data.get('father') ?? '');
   const partner = String(data.get('partner') ?? '');
-
   const taken = new Set(state.chart.people.map((person) => person.id));
   const id = slug(name, taken);
 
@@ -447,53 +573,229 @@ function addPerson(): void {
   if (person) renderProfile(person);
 }
 
-/* ---------------- save / load ---------------- */
+function removePerson(id: string): void {
+  if (!state) return;
+  const person = findPerson(state.chart, id);
+  if (!person) return;
+  if (!window.confirm(`Remove ${person.name} from the chart? Their links go with them.`)) return;
+  state.db.run('MATCH (p:Person {id: $id}) DETACH DELETE p', { id });
+  state.subjects = state.subjects.filter((subject) => subject !== id);
+  state.path = [];
+  refresh();
+  renderPrompt();
+}
+
+/* ---------------- files ---------------- */
 
 function saveJson(): void {
   if (!state) return;
-  const payload = {
-    app: 'kin',
-    version: 1,
-    people: state.chart.people,
-    parents: state.chart.parents,
-    partners: state.chart.partners,
-  };
-  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+  const blob = new Blob([JSON.stringify({ app: 'kin', version: 1, ...state.chart }, null, 2)], {
+    type: 'application/json',
+  });
+  download(blob, 'kin-family.json');
+}
+
+function saveGedcom(): void {
+  if (!state) return;
+  download(new Blob([fromChart(state.chart)], { type: 'text/plain' }), 'kin-family.ged');
+}
+
+function download(blob: Blob, name: string): void {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = 'kin-family.json';
+  a.download = name;
   a.click();
   URL.revokeObjectURL(url);
 }
 
-async function loadJson(file: File): Promise<void> {
+interface FilePayload {
+  people?: Person[];
+  parents?: Edge[];
+  partners?: Edge[];
+}
+
+async function loadFile(file: File): Promise<void> {
   if (!state) return;
-  const parsed = JSON.parse(await file.text()) as {
-    people?: Person[];
-    parents?: Array<{ from: string; to: string }>;
-    partners?: Array<{ from: string; to: string }>;
-  };
-  if (!Array.isArray(parsed.people)) throw new Error('not a Kin file');
+  const text = await file.text();
+  const isGedcom = /\.(ged|gedcom)$/i.test(file.name) || /(^|\n)0 HEAD/.test(text.slice(0, 400));
+
+  let chart: Chart;
+  if (isGedcom) {
+    const parsed = parseGedcom(text);
+    chart = toChart(parsed);
+    if (parsed.warnings.length > 0) {
+      answerEl.innerHTML = `<p class="kicker">Imported with notes</p><p class="term">${parsed.people.length} people</p><p class="why">${parsed.warnings.slice(0, 4).map(esc).join('<br>')}</p>`;
+    }
+  } else {
+    const parsed = JSON.parse(text) as FilePayload;
+    if (!Array.isArray(parsed.people)) throw new Error('not a Kin file');
+    chart = {
+      people: parsed.people,
+      parents: parsed.parents ?? [],
+      partners: parsed.partners ?? [],
+    };
+  }
+
+  replaceChart(chart);
+}
+
+function replaceChart(chart: Chart): void {
+  if (!state) return;
   clearAll(state.db);
-  for (const person of parsed.people) {
-    state.db.run('CREATE (:Person {id: $id, name: $name, sex: $sex, born: $born, died: $died})', {
-      id: person.id,
-      name: person.name,
-      sex: person.sex,
-      born: person.born ?? null,
-      died: person.died ?? null,
+
+  if (chart.people.length > 0) {
+    state.db.run('UNWIND $rows AS r CREATE (:Person {id: r.id, name: r.name, sex: r.sex, born: r.born, died: r.died})', {
+      rows: chart.people.map((person) => ({
+        id: person.id,
+        name: person.name,
+        sex: person.sex,
+        born: person.born ?? null,
+        died: person.died ?? null,
+      })),
     });
   }
-  for (const edge of parsed.parents ?? []) {
-    state.db.run('MATCH (p:Person {id: $from}), (c:Person {id: $to}) MERGE (p)-[:PARENT]->(c)', edge);
+  if (chart.parents.length > 0) {
+    chunk(chart.parents, 400).forEach((rows) => {
+      state?.db.run('UNWIND $rows AS r MATCH (p:Person {id: r.from}), (c:Person {id: r.to}) MERGE (p)-[:PARENT]->(c)', {
+        rows,
+      });
+    });
   }
-  for (const edge of parsed.partners ?? []) {
-    state.db.run('MATCH (a:Person {id: $from}), (b:Person {id: $to}) MERGE (a)-[:PARTNER]->(b)', edge);
+  if (chart.partners.length > 0) {
+    chunk(chart.partners, 400).forEach((rows) => {
+      state?.db.run('UNWIND $rows AS r MATCH (a:Person {id: r.from}), (b:Person {id: r.to}) MERGE (a)-[:PARTNER]->(b)', {
+        rows,
+      });
+    });
   }
+
   state.subjects = [];
+  state.path = [];
+  state.focus = chart.people.length > BIG ? 2 : 'all';
   refresh();
   renderPrompt();
+}
+
+function chunk<T>(items: T[], size: number): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));
+  return out;
+}
+
+/* ---------------- the report ---------------- */
+
+function openReport(): void {
+  if (!state) return;
+  const chart = state.chart;
+  if (chart.people.length === 0) {
+    reportEl.innerHTML = '<h2>Checks</h2><p class="empty">The chart is empty.</p>';
+    reportDialog.showModal();
+    return;
+  }
+
+  const facts: Insights = analyse(state.db, chart);
+  const chain = longestChain(chart);
+  const pair = state.subjects.length === 2 ? state.subjects : [];
+
+  const fact = (label: string, value: string | number, note = ''): string =>
+    `<div><dt>${label}</dt><dd>${value}${note ? ` <small>${note}</small>` : ''}</dd></div>`;
+
+  const cousinRows =
+    facts.consanguineous.length === 0
+      ? '<p class="empty">No couple in this chart shares an ancestor.</p>'
+      : `<ul class="rows">${facts.consanguineous
+          .map(
+            (pair_) =>
+              `\n<li><span>${esc(pair_.a.name)} × ${esc(pair_.b.name)}</span><span class="leader"></span><span class="note">${esc(pair_.term.term)}, ${pair_.shared} shared</span></li>`,
+          )
+          .join('')}</ul>`;
+
+  const gaps: string[] = [];
+  if (facts.undated.length > 0) {
+    gaps.push(
+      `No birth year for ${facts.undated.length} ${facts.undated.length === 1 ? 'person' : 'people'}: ${facts.undated
+        .slice(0, 6)
+        .map((p) => esc(p.name))
+        .join(', ')}${facts.undated.length > 6 ? '…' : ''}`,
+    );
+  }
+  if (facts.isolated.length > 0) {
+    gaps.push(`Unconnected: ${facts.isolated.map((p) => esc(p.name)).join(', ')}`);
+  }
+  if (gaps.length === 0) gaps.push('Nothing missing: every person has a birth year and at least one link.');
+
+  reportEl.innerHTML = `
+    <h2>Checks</h2>
+    <p class="lede">Everything below is a walk of this graph, run in the tab.</p>
+    <dl class="facts">
+      ${fact('People', facts.people)}
+      ${fact('Generations', facts.generations)}
+      ${fact('Families', facts.surnames, 'surnames')}
+      ${fact('Parent links', facts.parentLinks)}
+      ${fact('Partnerships', facts.partnerLinks)}
+      ${fact('Span', facts.span ? `${facts.span.from}–${facts.span.to}` : '—')}
+    </dl>
+
+    <h3>Cousins who married</h3>
+    ${cousinRows}
+
+    <h3>Longest unbroken line</h3>
+    ${
+      chain.length > 1
+        ? `<ul class="rows"><li><span>${chain.map((p) => esc(p.name)).join(' <span class="note">→</span> ')}</span><span class="leader"></span><span class="note">${chain.length} generations</span></li></ul>`
+        : '<p class="empty">No parent chain longer than one link.</p>'
+    }
+
+    <h3>Who connects them?</h3>
+    <p class="asker">
+      <select id="ask-a">${optionsFor(chart, pair[0])}</select>
+      <select id="ask-b">${optionsFor(chart, pair[1])}</select>
+      <select id="ask-c">${optionsFor(chart, undefined, '— third, optional —')}</select>
+      <button type="button" id="ask-go">Find</button>
+    </p>
+    <p class="answer-line" id="ask-out"></p>
+
+    <h3>Missing</h3>
+    <p class="empty">${gaps.join('<br>')}</p>
+  `;
+
+  reportDialog.showModal();
+  const run = (): void => {
+    const ids = ['ask-a', 'ask-b', 'ask-c']
+      .map((id) => el<HTMLSelectElement>(`#${id}`).value)
+      .filter(Boolean);
+    const out = el<HTMLElement>('#ask-out');
+    if (ids.length < 2) {
+      out.textContent = 'Pick at least two people.';
+      return;
+    }
+    const shared = commonAncestorsOf(state?.db as Db, state?.chart as Chart, ids);
+    if (shared.length === 0) {
+      out.innerHTML = `<b>${ids.length === 2 ? 'Those two' : 'Those three'} share no ancestor</b> in this chart — any tie between them runs through a partnership.`;
+      return;
+    }
+    const top = shared.slice(0, 2);
+    const names = top
+      .map((row) => `<b>${esc(row.ancestor.name)}</b> (${row.distances.join(', ')} generations away)`)
+      .join(', ');
+    out.innerHTML = `${ids.length === 2 ? 'Closest shared ancestor' : 'Closest shared ancestors'}: ${names}. ${shared.length} in common.`;
+  };
+  el<HTMLButtonElement>('#ask-go').addEventListener('click', run);
+}
+
+function optionsFor(chart: Chart, selected?: string, blank = '—'): string {
+  return [`<option value="">${esc(blank)}</option>`]
+    .concat(
+      chart.people
+        .slice()
+        .sort((a, b) => a.name.localeCompare(b.name))
+        .map(
+          (person) =>
+            `<option value="${esc(person.id)}"${person.id === selected ? ' selected' : ''}>${esc(person.name)}</option>`,
+        ),
+    )
+    .join('');
 }
 
 /* ---------------- boot ---------------- */
@@ -502,9 +804,34 @@ async function boot(): Promise<void> {
   const db = await openDb();
   seedSample(db);
   const chart = loadChart(db);
-  state = { db, chart, layout: layoutChart(chart), subjects: [], path: [] };
+  state = { db, chart, view: chart, layout: layoutChart(chart), subjects: [], path: [], focus: 'all', hidden: 0 };
   refresh();
-  renderPrompt();
+
+  const params = new URLSearchParams(location.search);
+  const anchor = params.get('a');
+  const partner = params.get('b');
+  const focus = params.get('focus');
+  if (focus === '2' || focus === '3') state.focus = Number(focus);
+  if (anchor && findPerson(state.chart, anchor)) {
+    state.subjects = [anchor];
+    const second = partner ? findPerson(state.chart, partner) : null;
+    if (second) state.subjects.push(second.id);
+    rebuildView();
+    draw();
+    paintIndex();
+    if (state.subjects.length === 2) {
+      answerPair();
+    } else {
+      const only = findPerson(state.chart, anchor);
+      if (only) renderProfile(only);
+    }
+  } else {
+    renderPrompt();
+    if (findPerson(chart, 'ada') && findPerson(chart, 'theo')) {
+      state.subjects = ['ada', 'theo'];
+      answerPair();
+    }
+  }
 
   el<HTMLButtonElement>('[data-act="sample"]').addEventListener('click', () => {
     if (!state) return;
@@ -512,16 +839,27 @@ async function boot(): Promise<void> {
     seedSample(state.db);
     state.subjects = [];
     state.path = [];
+    state.focus = 'all';
     refresh();
     renderPrompt();
   });
 
-  el<HTMLButtonElement>('[data-act="add"]').addEventListener('click', openAddDialog);
+  el<HTMLButtonElement>('[data-act="add"]').addEventListener('click', () => openPersonDialog());
   el<HTMLButtonElement>('[data-act="save"]').addEventListener('click', saveJson);
+  el<HTMLButtonElement>('[data-act="report"]').addEventListener('click', openReport);
+  el<HTMLButtonElement>('#export-ged').addEventListener('click', saveGedcom);
+
+  const importButton = el<HTMLButtonElement>('[data-act="import"]');
+  importButton.addEventListener('click', () => gedFile.click());
+  gedFile.addEventListener('change', () => {
+    const file = gedFile.files?.[0];
+    if (file) void loadFile(file);
+    gedFile.value = '';
+  });
 
   addForm.addEventListener('submit', (event) => {
     const submitter = (event as SubmitEvent).submitter as HTMLButtonElement | null;
-    if (submitter?.value === 'add') addPerson();
+    if (submitter?.value === 'add') savePerson();
   });
 
   chartEl.addEventListener('click', (event) => {
@@ -530,9 +868,28 @@ async function boot(): Promise<void> {
     if (id) select(id);
   });
 
+  answerEl.addEventListener('click', (event) => {
+    const target = (event.target as Element).closest('[data-person-act]');
+    if (!target) return;
+    const id = target.getAttribute('data-id') ?? '';
+    if (target.getAttribute('data-person-act') === 'remove') removePerson(id);
+    if (target.getAttribute('data-person-act') === 'edit') {
+      const person = findPerson(state?.chart ?? chart, id);
+      if (person) openPersonDialog(person);
+    }
+  });
+
   ledgerEl.addEventListener('click', (event) => {
     const id = (event.target as Element).closest('button')?.getAttribute('data-pick');
     if (id) select(id);
+  });
+
+  focusBox.addEventListener('click', (event) => {
+    const value = (event.target as Element).closest('button')?.getAttribute('data-focus');
+    if (!value || !state) return;
+    state.focus = value === 'all' ? 'all' : Number(value);
+    rebuildView();
+    draw();
   });
 
   askForm.addEventListener('submit', (event) => {
@@ -550,14 +907,8 @@ async function boot(): Promise<void> {
     event.preventDefault();
     shell.classList.remove('drop-target');
     const file = event.dataTransfer?.files?.[0];
-    if (file) void loadJson(file);
+    if (file) void loadFile(file);
   });
-
-  // first look: answer the question the app is named after
-  if (findPerson(chart, 'ada') && findPerson(chart, 'theo')) {
-    state.subjects = ['ada', 'theo'];
-    answerPair();
-  }
 }
 
 void boot();

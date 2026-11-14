@@ -18,10 +18,15 @@
           <p class="tagline">Ask how two people are related. The line gets drawn.</p>
         </div>
         <nav class="tools" aria-label="chart actions">
-          <button type="button" data-act="sample">Sample family</button>
-          <span class="tool-sep" aria-hidden="true"></span>
-          <button type="button" data-act="add" class="primary">Add a person</button>
-          <button type="button" data-act="save">Save</button>
+          <div class="tool-group">
+            <button type="button" data-act="sample">Sample</button>
+            <button type="button" data-act="import">Import GEDCOM</button>
+            <button type="button" data-act="save">Save</button>
+          </div>
+          <div class="tool-group">
+            <button type="button" data-act="report" class="quiet">Report</button>
+            <button type="button" data-act="add" class="primary">Add a person</button>
+          </div>
         </nav>
       </header>
 
@@ -29,7 +34,14 @@
         <section class="chart-shell" aria-label="family chart">
           <div class="running-head">
             <span id="run-left">The register</span>
-            <span id="run-right"></span>
+            <span class="run-side">
+              <span id="run-right"></span>
+              <span class="focus" id="focus" hidden>
+                <button type="button" data-focus="all">all</button>
+                <button type="button" data-focus="2">2</button>
+                <button type="button" data-focus="3">3</button>
+              </span>
+            </span>
           </div>
           <div id="chart" class="chart"></div>
           <p class="hint" id="hint">Pick two names to ask about them.</p>
@@ -71,7 +83,8 @@
 
     <dialog id="add-dialog">
       <form method="dialog" id="add-form">
-        <h2>Add a person</h2>
+        <h2 id="add-title">Add a person</h2>
+        <p class="form-note" id="add-note"></p>
         <div class="field">
           <label for="f-name">Name</label>
           <input id="f-name" name="name" required maxlength="40" placeholder="Rosa Vell" />
@@ -111,6 +124,16 @@
           <button value="add" class="primary">Add</button>
         </menu>
       </form>
+    </dialog>
+
+    <input type="file" id="ged-file" accept=".ged,.gedcom,text/plain" hidden />
+
+    <dialog id="report-dialog">
+      <div id="report"></div>
+      <menu>
+        <button type="button" id="export-ged">Export GEDCOM</button>
+        <button value="close" class="primary">Close</button>
+      </menu>
     </dialog>
 
     <script type="module" src="/src/main.ts"></script>

@@ -20,6 +20,10 @@
   box-sizing: border-box;
 }
 
+[hidden] {
+  display: none !important;
+}
+
 html,
 body {
   height: 100%;
@@ -176,10 +180,8 @@ button.primary:hover {
 }
 
 .chart-svg {
-  width: auto;
-  height: auto;
-  max-width: 100%;
-  max-height: 100%;
+  width: 100%;
+  height: 100%;
   overflow: visible;
 }
 
@@ -731,7 +733,7 @@ dialog h2 {
 
 dialog menu {
   display: flex;
-  justify-content: flex-end;
+  justify-content: space-between;
   gap: 10px;
   margin: 22px 0 0;
   padding: 0;
@@ -773,4 +775,242 @@ dialog menu {
   .chart-shell {
     padding-right: 0;
   }
+}
+
+/* ---------------- tools, focus, report ---------------- */
+
+.tools {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+
+.tool-group {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.run-side {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+
+.focus {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  border: 1px solid var(--rule);
+}
+
+.focus button {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  padding: 3px 7px;
+  color: var(--ink-soft);
+  border-right: 1px solid var(--rule-soft);
+}
+
+.focus button:last-child {
+  border-right: 0;
+}
+
+.focus button::after {
+  display: none;
+}
+
+.focus button.on {
+  background: var(--ink);
+  color: var(--paper-lit);
+}
+
+.focus button:hover {
+  color: var(--ink);
+}
+
+.focus button.on:hover {
+  color: var(--paper-lit);
+}
+
+button.quiet {
+  color: var(--ink-soft);
+}
+
+/* ---------------- the report ---------------- */
+
+#report-dialog {
+  width: min(620px, 94vw);
+  max-height: 84vh;
+  overflow: auto;
+}
+
+#report h2 {
+  margin: 0 0 4px;
+  font-size: 26px;
+  font-weight: 500;
+}
+
+#report .lede {
+  margin: 0 0 20px;
+  font-size: 14px;
+  font-style: italic;
+  color: var(--ink-soft);
+}
+
+#report h3 {
+  margin: 22px 0 8px;
+  padding-top: 12px;
+  border-top: 1px solid var(--rule);
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.19em;
+  text-transform: uppercase;
+  font-weight: 400;
+  color: var(--ink-soft);
+}
+
+#report .facts {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14px 20px;
+  margin: 0;
+}
+
+#report .facts div {
+  margin: 0;
+}
+
+#report .facts dt {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+
+#report .facts dd {
+  margin: 2px 0 0;
+  font-size: 22px;
+  line-height: 1.15;
+}
+
+#report .facts dd small {
+  font-size: 12px;
+  color: var(--ink-soft);
+  font-style: italic;
+}
+
+#report ul.rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+#report ul.rows li {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 5px 0;
+  border-bottom: 1px solid var(--rule-soft);
+  font-size: 14px;
+}
+
+#report ul.rows li:last-child {
+  border-bottom: 0;
+}
+
+#report ul.rows .leader {
+  flex: 1;
+  border-bottom: 1px dotted var(--rule);
+  transform: translateY(-3px);
+}
+
+#report ul.rows .note {
+  font-size: 13px;
+  font-style: italic;
+  color: var(--ink-soft);
+}
+
+#report .empty {
+  margin: 0;
+  font-size: 14px;
+  font-style: italic;
+  color: var(--ink-soft);
+}
+
+#report .asker {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+#report select {
+  font-family: var(--serif);
+  font-size: 14px;
+  padding: 5px 7px;
+  border: 1px solid var(--rule);
+  background: #fdf9ef;
+  color: var(--ink);
+  max-width: 180px;
+}
+
+#report .answer-line {
+  margin: 10px 0 0;
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+#report .answer-line b {
+  font-weight: 600;
+}
+
+.warn {
+  margin: 0;
+  font-size: 12.5px;
+  font-style: italic;
+  color: var(--thread);
+}
+
+.form-note {
+  margin: -10px 0 16px;
+  font-size: 12.5px;
+  font-style: italic;
+  color: var(--ink-soft);
+}
+
+.verdict .actions {
+  margin: 14px 0 0;
+  display: flex;
+  gap: 14px;
+}
+
+.verdict .actions button {
+  padding: 2px 0;
+  font-size: 12px;
+  font-family: var(--mono);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+
+.verdict .actions button:hover {
+  color: var(--thread);
+}
+
+#report-dialog menu #export-ged {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  padding: 8px 0;
+}
+
+#report-dialog menu #export-ged:hover {
+  color: var(--ink);
 }

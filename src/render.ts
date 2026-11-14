@@ -85,7 +85,8 @@ export function renderChart(root: Element, options: RenderOptions): void {
   const ROMAN = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X'];
   for (let row = 0; row < layout.rows.length; row += 1) {
     const y = PAD_Y + row * ROW;
-    const numeral = ROMAN[row] ?? String(row + 1);
+    const absolute = layout.generations[row] ?? row;
+    const numeral = ROMAN[absolute] ?? String(absolute + 1);
     parts.push(
       `<g class="gen"><line x1="30" y1="${y}" x2="46" y2="${y}" /><text x="58" y="${y + 4}">${numeral}</text></g>`,
     );

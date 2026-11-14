@@ -44,8 +44,10 @@ export interface Layout {
   couples: Array<{ a: string; b: string }>;
   width: number;
   height: number;
-  /** every person's row index, for tests */
+  /** every person's generation in the chart this was laid out from */
   generation: Map<string, number>;
+  /** the absolute generation number of each drawn row, top to bottom */
+  generations: number[];
 }
 
 export function computeGenerations(chart: Chart): Map<string, number> {
@@ -157,13 +159,23 @@ function orderBlock(group: string[], partnerPairs: Array<[string, string]>): str
   return out;
 }
 
-export function layoutChart(chart: Chart): Layout {
-  const gen = computeGenerations(chart);
+/**
+ * `gens` lets a focused view keep the generations it had in the full chart:
+ * a subgraph drawn on its own would renumber its oldest person as generation
+ * zero and the rows would no longer line up with the register.
+ */
+export function layoutChart(chart: Chart, gens?: Map<string, number>): Layout {
+  const gen = gens ?? computeGenerations(chart);
   const byId = new Map(chart.people.map((person) => [person.id, person]));
 
-  const maxGen = Math.max(0, ...[...gen.values()]);
-  const rows: string[][] = Array.from({ length: maxGen + 1 }, () => []);
-  for (const person of chart.people) rows[gen.get(person.id) ?? 0]?.push(person.id);
+  // only the generations that actually have somebody in them, so a focused
+  // view does not open with five empty rows above the first name
+  const present = [...new Set(chart.people.map((person) => gen.get(person.id) ?? 0))].sort((a, b) => a - b);
+  const rows: string[][] = present.map(() => []);
+  for (const person of chart.people) {
+    const row = present.indexOf(gen.get(person.id) ?? 0);
+    if (row >= 0) rows[row]?.push(person.id);
+  }
 
   const partnerPairs: Array<[string, string]> = chart.partners.map((edge) => [edge.from, edge.to]);
   const parentsOf = new Map<string, string[]>();
@@ -245,7 +257,7 @@ export function layoutChart(chart: Chart): Layout {
   for (const [id, value] of x) {
     const person = byId.get(id);
     if (!person) continue;
-    const row = gen.get(id) ?? 0;
+    const row = present.indexOf(gen.get(id) ?? 0);
     placed.set(id, { person, x: value, y: PAD_Y + row * ROW, gen: row });
   }
 
@@ -279,7 +291,7 @@ export function layoutChart(chart: Chart): Layout {
   }
 
   const width = Math.max(...[...placed.values()].map((p) => p.x), PAD_X) + PAD_X;
-  const height = PAD_Y + maxGen * ROW + PAD_Y;
+  const height = PAD_Y + (rows.length - 1) * ROW + PAD_Y;
 
   // rows in final left-to-right order, which is what a renderer or a test wants
   const rowsInPlace = rows.map((row) => [...row].sort((a, b) => (x.get(a) ?? 0) - (x.get(b) ?? 0)));
@@ -292,6 +304,7 @@ export function layoutChart(chart: Chart): Layout {
     width,
     height,
     generation: gen,
+    generations: present,
   };
 }
 
