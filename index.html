@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%23f2eada'/%3E%3Ctext x='16' y='23' font-family='Georgia,serif' font-size='20' fill='%23211d18' text-anchor='middle'%3EK%3C/text%3E%3C/svg%3E" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Kin — how are we related?</title>
+    <meta
+      name="description"
+      content="A family graph that lives in your browser tab. Ask how any two people are related; Kin draws the line."
+    />
+    <script type="module" crossorigin src="./assets/index-D6yxLWcK.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index-BsrIqb48.css">
+  </head>
+  <body>
+    <div class="app">
+      <header class="masthead">
+        <div class="wordmark">
+          <h1>Kin<span class="stop">.</span></h1>
+          <p class="tagline">Ask how two people are related. The line gets drawn.</p>
+        </div>
+        <nav class="tools" aria-label="chart actions">
+          <div class="tool-group">
+            <button type="button" data-act="sample">Sample</button>
+            <button type="button" data-act="import">Import GEDCOM</button>
+            <button type="button" data-act="save">Save</button>
+          </div>
+          <div class="tool-group">
+            <button type="button" data-act="report" class="quiet">Report</button>
+            <button type="button" data-act="add" class="primary">Add a person</button>
+          </div>
+        </nav>
+      </header>
+
+      <main class="stage">
+        <section class="chart-shell" aria-label="family chart">
+          <div class="running-head">
+            <span id="run-left">The register</span>
+            <span class="run-side">
+              <span id="run-right"></span>
+              <span class="focus" id="focus" hidden>
+                <button type="button" data-focus="all">all</button>
+                <button type="button" data-focus="2">2</button>
+                <button type="button" data-focus="3">3</button>
+              </span>
+            </span>
+          </div>
+          <div class="plate" aria-hidden="true"></div>
+          <div id="chart" class="chart"></div>
+          <p class="legend" aria-hidden="true">
+            <span class="lg"><i class="sw path"></i>the answer</span>
+            <span class="lg"><i class="sw line"></i>descent</span>
+            <span class="lg"><i class="sw pair"></i>marriage</span>
+            <span class="lg"><i class="sw life"></i>a lifetime, one scale</span>
+          </p>
+          <p class="hint" id="hint">Pick two names to ask about them.</p>
+        </section>
+
+        <aside class="panel">
+          <form class="ask" id="ask" autocomplete="off">
+            <label for="q">Ask</label>
+            <div class="ask-row">
+              <input
+                id="q"
+                name="q"
+                type="text"
+                placeholder="How are Ada and Milo related?"
+                spellcheck="false"
+              />
+              <button type="submit" class="go" aria-label="ask">Ask</button>
+            </div>
+          </form>
+
+          <section class="verdict" id="answer" aria-live="polite"></section>
+
+          <section class="index" id="index">
+            <div class="index-head">
+              <h2 id="index-title">The chart</h2>
+              <p class="index-meta" id="index-meta"></p>
+            </div>
+            <ul class="ledger" id="ledger"></ul>
+          </section>
+
+          <details class="query" id="query" hidden>
+            <summary>The query behind that answer</summary>
+            <pre><code id="cypher"></code></pre>
+            <p class="query-meta" id="query-meta"></p>
+          </details>
+        </aside>
+      </main>
+    </div>
+
+    <dialog id="add-dialog">
+      <form method="dialog" id="add-form">
+        <h2 id="add-title">Add a person</h2>
+        <p class="form-note" id="add-note"></p>
+        <div class="field">
+          <label for="f-name">Name</label>
+          <input id="f-name" name="name" required maxlength="40" placeholder="Rosa Vell" />
+        </div>
+        <div class="field">
+          <label for="f-sex">Sex</label>
+          <select id="f-sex" name="sex">
+            <option value="F">Female</option>
+            <option value="M">Male</option>
+            <option value="X">Not stated</option>
+          </select>
+        </div>
+        <div class="field-row">
+          <div class="field">
+            <label for="f-born">Born</label>
+            <input id="f-born" name="born" inputmode="numeric" maxlength="4" placeholder="1898" />
+          </div>
+          <div class="field">
+            <label for="f-died">Died</label>
+            <input id="f-died" name="died" inputmode="numeric" maxlength="4" placeholder="" />
+          </div>
+        </div>
+        <div class="field">
+          <label for="f-mother">Mother <span class="opt">optional</span></label>
+          <select id="f-mother" name="mother"><option value="">—</option></select>
+        </div>
+        <div class="field">
+          <label for="f-father">Father <span class="opt">optional</span></label>
+          <select id="f-father" name="father"><option value="">—</option></select>
+        </div>
+        <div class="field">
+          <label for="f-partner">Partner <span class="opt">optional</span></label>
+          <select id="f-partner" name="partner"><option value="">—</option></select>
+        </div>
+        <menu>
+          <button value="cancel" formnovalidate>Cancel</button>
+          <button value="add" class="primary">Add</button>
+        </menu>
+      </form>
+    </dialog>
+
+    <input type="file" id="ged-file" accept=".ged,.gedcom,text/plain" hidden />
+
+    <dialog id="report-dialog">
+      <div id="report"></div>
+      <menu>
+        <button type="button" id="export-ged">Export GEDCOM</button>
+        <button value="close" class="primary">Close</button>
+      </menu>
+    </dialog>
+
+  </body>
+</html>
