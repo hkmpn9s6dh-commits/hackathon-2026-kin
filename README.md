@@ -61,7 +61,7 @@ Everything, from a clean clone to the verdict:
 bash scripts/verify.sh
 ```
 
-That runs the type check, 68 unit tests, the build, 14 browser checks against
+That runs the type check, 72 unit tests, the build, 14 browser checks against
 the built bundle, and the UI measurement. Exit code is the answer.
 
 ## What it does
@@ -69,8 +69,12 @@ the built bundle, and the UI measurement. Exit code is the answer.
 - **Two names, one question.** Click any two people, or type the question.
   You get the kinship term, which ancestor the lines meet at, how many
   generations each side, and how many ancestors are shared.
-- **The answer is drawn.** The path lights up in vermilion; the rest of the
-  chart stays in ink.
+- **One name is already a question.** Pick anybody and the index turns into
+  *everyone, by relation* — all fifteen other people in the chart, each with
+  their kinship term, closest first. Pick a row to ask about that pair.
+- **The answer is drawn.** The path lights up in vermilion, and the card splits
+  it into two legs — the climb up to the shared ancestor, and the climb down to
+  the other person. The rest of the chart stays in ink.
 - **Half is not full.** Siblings who share one parent are named half-siblings —
   but only when the chart actually records two parents for each of them.
   With less information, Kin says "sister" rather than invent a claim.

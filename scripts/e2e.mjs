@@ -53,20 +53,20 @@ async function main() {
     const people = await page.locator('.chart-svg .person').count();
     check('the chart draws every person', people === 16, `${people} names`);
 
-    const term = await page.locator('.answer .term').innerText();
+    const term = await page.locator('#answer .term').innerText();
     check('the first screen already answers a question', /second cousin/i.test(term), term.replace(/\n/g, ' '));
 
     const lit = await page.locator('.chart-svg .is-path').count();
     check('the answer is drawn on the chart', lit >= 5, `${lit} marks in vermilion`);
 
-    const heroSub = await page.locator('.answer .kicker').innerText();
+    const heroSub = await page.locator('#answer .kicker').innerText();
     check('the answer names both people', /ada vell/i.test(heroSub) && /theo lind/i.test(heroSub), heroSub);
 
     // ask, in words
     await page.fill('#q', 'how are Daan and Noor related');
     await page.press('#q', 'Enter');
-    await page.waitForSelector('.answer .term');
-    const half = await page.locator('.answer .term').innerText();
+    await page.waitForSelector('#answer .term');
+    const half = await page.locator('#answer .term').innerText();
     check('a typed question reaches the graph', /half-sister/i.test(half), half.replace(/\n/g, ' '));
 
     // the query disclosure
@@ -74,17 +74,17 @@ async function main() {
     check('the Cypher that produced it is on screen', /MATCH up/.test(cypher) && /PARENT/.test(cypher));
 
     // clicking two names
-    await page.click('.roster button[data-pick="marta"]');
-    await page.click('.roster button[data-pick="hedy"]');
+    await page.click('.ledger button[data-pick="marta"]');
+    await page.click('.ledger button[data-pick="hedy"]');
     await page.waitForTimeout(120);
-    const shared = await page.locator('.answer .term').innerText();
+    const shared = await page.locator('#answer .term').innerText();
     check('two names clicked on the chart answer too', /both married/i.test(shared), shared.replace(/\n/g, ' '));
 
     // one name is a question of its own
-    await page.click('.roster button[data-pick="ivo"]');
+    await page.click('.ledger button[data-pick="ivo"]');
     await page.waitForTimeout(120);
-    const solo = await page.locator('.answer').innerText();
-    check('one name lists its neighbours', /mother/i.test(solo) || /parents/i.test(solo), solo.split('\n')[0]);
+    const solo = await page.locator('#answer').innerText();
+    check('one name shows a profile', /child of|partner of|parent of/i.test(solo), solo.split('\n').slice(0, 2).join(' / '));
 
     // editing
     await page.click('[data-act="add"]');
@@ -99,8 +99,8 @@ async function main() {
     const nina = await page.locator('.chart-svg .person[data-id="nina-vell"]').count();
     check('and is drawn under their mother', nina === 1);
 
-    const rosterMeta = await page.locator('#roster-meta').innerText();
-    check('the roster counts what is in the graph', /17 people/.test(rosterMeta), rosterMeta);
+    const indexMeta = await page.locator('#index-meta').innerText();
+    check('the index counts what is in the graph', /17 people/.test(indexMeta), indexMeta);
 
     // layout hygiene
     const overflow = await page.evaluate(() => {

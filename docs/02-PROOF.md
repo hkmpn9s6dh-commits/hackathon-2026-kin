@@ -14,7 +14,7 @@ $ bash scripts/verify.sh
 == node          node v22.22.2, npm 10.9.7
 == install       node_modules present
 == type check    (tsc --noEmit, 无输出)
-== unit tests    68 tests passed
+== unit tests    72 tests passed
 == build         dist/ 产出，wasm 6,932,319 字节
 == end to end    14/14 checks passed
 == ui measurement proof/ui/report.md updated
@@ -22,12 +22,12 @@ $ bash scripts/verify.sh
 verify: all green
 ```
 
-## 2. 单测（68 条）
+## 2. 单测（72 条）
 
 | 文件 | 条数 | 守的是什么 |
 | --- | --- | --- |
 | `test/kinship.test.ts` | 33 | 27 组 (上溯, 下溯) → 英语称谓的对照表；half/full 分开；说法可逆；负数报错 |
-| `test/graph.test.ts` | 17 | 真引擎（Node 绑定的同一个 Relate）建这 16 人，跑真 Cypher，断言表亲/半同胞/姑姑/姻亲/同一个人/查无关系 |
+| `test/graph.test.ts` | 21 | 真引擎（Node 绑定的同一个 Relate）建这 16 人，跑真 Cypher，断言表亲/半同胞/姑姑/姻亲/同一个人/查无关系 |
 | `test/layout.test.ts` | 9 | 代数单调；同行不重叠；多配偶的人在两个配偶之间；子代挂在父母之下 |
 | `test/ask.test.ts` | 9 | 问句解析：两个名字的顺序、长名优先、不匹配单词内部、单名的父母/子女/配偶意图 |
 

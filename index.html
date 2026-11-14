@@ -14,18 +14,23 @@
     <div class="app">
       <header class="masthead">
         <div class="wordmark">
-          <h1>Kin</h1>
+          <h1>Kin<span class="stop">.</span></h1>
           <p class="tagline">Ask how two people are related. The line gets drawn.</p>
         </div>
         <nav class="tools" aria-label="chart actions">
           <button type="button" data-act="sample">Sample family</button>
+          <span class="tool-sep" aria-hidden="true"></span>
           <button type="button" data-act="add" class="primary">Add a person</button>
-          <button type="button" data-act="save">Save <code>.rl</code></button>
+          <button type="button" data-act="save">Save</button>
         </nav>
       </header>
 
       <main class="stage">
         <section class="chart-shell" aria-label="family chart">
+          <div class="running-head">
+            <span id="run-left">The register</span>
+            <span id="run-right"></span>
+          </div>
           <div id="chart" class="chart"></div>
           <p class="hint" id="hint">Pick two names to ask about them.</p>
         </section>
@@ -45,19 +50,21 @@
             </div>
           </form>
 
-          <div class="answer" id="answer" aria-live="polite"></div>
+          <section class="verdict" id="answer" aria-live="polite"></section>
+
+          <section class="index" id="index">
+            <div class="index-head">
+              <h2 id="index-title">The chart</h2>
+              <p class="index-meta" id="index-meta"></p>
+            </div>
+            <ul class="ledger" id="ledger"></ul>
+          </section>
 
           <details class="query" id="query" hidden>
             <summary>The query behind that answer</summary>
             <pre><code id="cypher"></code></pre>
             <p class="query-meta" id="query-meta"></p>
           </details>
-
-          <div class="roster-wrap">
-            <h2>The chart</h2>
-            <p class="roster-meta" id="roster-meta"></p>
-            <ul class="roster" id="roster"></ul>
-          </div>
         </aside>
       </main>
     </div>

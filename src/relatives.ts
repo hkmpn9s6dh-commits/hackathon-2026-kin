@@ -351,3 +351,73 @@ function explainMarriage(
     path: path.length > 0 ? path : [a.id, b.id],
   };
 }
+
+export interface Hop {
+  from: Person;
+  to: Person;
+  /** what `to` is to `from`: mother, son, partner… */
+  role: string;
+}
+
+function roleWord(from: string, to: Person, chart: Chart): string {
+  const parentEdge = chart.parents.find((edge) => edge.from === from && edge.to === to.id);
+  if (parentEdge) return to.sex === 'F' ? 'daughter' : to.sex === 'M' ? 'son' : 'child';
+  const childEdge = chart.parents.find((edge) => edge.from === to.id && edge.to === from);
+  if (childEdge) return to.sex === 'F' ? 'mother' : to.sex === 'M' ? 'father' : 'parent';
+  const partner = chart.partners.some(
+    (edge) => (edge.from === from && edge.to === to.id) || (edge.to === from && edge.from === to.id),
+  );
+  return partner ? 'partner' : 'relative';
+}
+
+/**
+ * The chain, with every step named. A list of surnames says nothing; "father
+ * Daan · mother Marta · brother Bram" is the sentence a person would say.
+ */
+export function hopsOf(chart: Chart, path: string[]): Hop[] {
+  const hops: Hop[] = [];
+  for (let i = 0; i < path.length - 1; i += 1) {
+    const from = findPerson(chart, path[i] as string);
+    const to = findPerson(chart, path[i + 1] as string);
+    if (!from || !to) continue;
+    hops.push({ from, to, role: roleWord(from.id, to, chart) });
+  }
+  return hops;
+}
+
+export interface LedgerRow {
+  person: Person;
+  term: string;
+  gap: number;
+  kind: 'blood' | 'marriage' | 'self' | 'none';
+}
+
+/**
+ * One question, every answer: how is everybody in this chart related to one
+ * person. Fifteen walks of the same path query, sorted by how close they are.
+ */
+export function ledger(db: Db, chart: Chart, id: string): LedgerRow[] {
+  const rows: LedgerRow[] = [];
+  for (const person of chart.people) {
+    if (person.id === id) {
+      rows.push({ person, term: 'themselves', gap: 0, kind: 'self' });
+      continue;
+    }
+    const verdict = findRelationship(db, id, person.id).verdict;
+    if (verdict.kind === 'blood') {
+      rows.push({ person, term: verdict.forward.term, gap: verdict.up + verdict.down, kind: 'blood' });
+    } else if (verdict.kind === 'marriage') {
+      const gap =
+        (verdict.anchorA.id === verdict.a.id ? 0 : 1) +
+        (verdict.anchorB.id === verdict.b.id ? 0 : 1) +
+        2;
+      rows.push({ person, term: 'by marriage', gap, kind: 'marriage' });
+    } else if (verdict.kind === 'shared-partner') {
+      rows.push({ person, term: 'by marriage', gap: 3, kind: 'marriage' });
+    } else {
+      rows.push({ person, term: 'no tie', gap: Number.POSITIVE_INFINITY, kind: 'none' });
+    }
+  }
+  rows.sort((l, r) => (l.gap === r.gap ? l.person.name.localeCompare(r.person.name) : l.gap - r.gap));
+  return rows;
+}

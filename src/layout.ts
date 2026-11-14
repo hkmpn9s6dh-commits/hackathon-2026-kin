@@ -15,9 +15,9 @@
 import type { Chart, Person } from './relatives';
 
 export const ROW = 146;
-export const COL = 182;
+export const COL = 168;
 export const COUPLE_GAP = 46;
-export const PAD_X = 78;
+export const PAD_X = 132;
 export const PAD_Y = 96;
 
 export interface Placed {

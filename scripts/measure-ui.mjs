@@ -24,9 +24,9 @@ const CHROME =
 const rules = [
   { id: 'pname', selector: '.pname', min: 14, note: 'a name on the chart' },
   { id: 'pdates', selector: '.pdates', min: 9, note: 'dates under a name' },
-  { id: 'term', selector: '.answer .term', min: 24, note: 'the answer' },
-  { id: 'why', selector: '.answer .why', min: 14, note: 'the sentence under it' },
-  { id: 'roster', selector: '.roster button', min: 13, note: 'roster name' },
+  { id: 'term', selector: '#answer .term', min: 24, note: 'the answer' },
+  { id: 'why', selector: '#answer .why', min: 14, note: 'the sentence under it' },
+  { id: 'roster', selector: '.ledger .who', min: 13, note: 'index name' },
   { id: 'ask', selector: '.ask input', min: 15, note: 'the ask box' },
 ];
 
@@ -54,7 +54,7 @@ async function main() {
 
     const overflow = await page.evaluate(() => {
       const out = [];
-      for (const selector of ['.panel', '.answer', '.chart-shell', '.masthead']) {
+      for (const selector of ['.panel', '#answer', '.chart-shell', '.masthead']) {
         const element = document.querySelector(selector);
         if (!element) continue;
         const dx = element.scrollWidth - element.clientWidth;
@@ -80,14 +80,14 @@ async function main() {
       };
       const paper = parse(getComputedStyle(document.body).backgroundColor);
       const ink = parse(getComputedStyle(document.querySelector('.pname')).fill || getComputedStyle(document.body).color);
-      const soft = parse(getComputedStyle(document.querySelector('.answer .why')).color);
+      const soft = parse(getComputedStyle(document.querySelector('#answer .why')).color);
       return { ink: ratio(ink, paper).toFixed(2), soft: ratio(soft, paper).toFixed(2) };
     });
     if (Number(contrast.ink) < 7) failed += 1;
     if (Number(contrast.soft) < 4.5) failed += 1;
 
     const tap = await page.evaluate(() => {
-      const button = document.querySelector('.roster button');
+      const button = document.querySelector('.ledger button');
       return button ? Math.round(button.getBoundingClientRect().height) : 0;
     });
     if (tap < 24) failed += 1;
@@ -107,7 +107,7 @@ async function main() {
       `- horizontal overflow: ${overflow.length === 0 ? 'none' : overflow.join(', ')}`,
       `- contrast, ink on paper: ${contrast.ink}:1 (floor 7:1)`,
       `- contrast, secondary text on paper: ${contrast.soft}:1 (floor 4.5:1)`,
-      `- roster tap target: ${tap}px (floor 24px)`,
+      `- index tap target: ${tap}px (floor 24px)`,
       '',
       failed === 0 ? '**All hygiene rules pass.**' : `**${failed} rule(s) failing.**`,
     ];

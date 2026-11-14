@@ -81,6 +81,17 @@ export function renderChart(root: Element, options: RenderOptions): void {
     `<svg class="chart-svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="family chart">`,
   );
 
+  // generation numerals in the gutter, the way a printed pedigree marks its rows
+  const ROMAN = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X'];
+  for (let row = 0; row < layout.rows.length; row += 1) {
+    const y = PAD_Y + row * ROW;
+    const numeral = ROMAN[row] ?? String(row + 1);
+    parts.push(
+      `<g class="gen"><line x1="30" y1="${y}" x2="46" y2="${y}" /><text x="58" y="${y + 4}">${numeral}</text></g>`,
+    );
+  }
+
+
   // descent lines first, then names on top of them
   for (const bus of buses.values()) {
     const strong = bus.children.some((child) => bus.parents.some((parent) => linked(parent, child)));

@@ -22,7 +22,7 @@ const only = process.argv[2] ?? '';
 
 async function main() {
   await mkdir(resolve(root, 'shots'), { recursive: true });
-  const server = await startServer(resolve(root, 'dist'), 4327);
+  const server = await startServer(resolve(root, 'dist'), 0);
   const browser = await chromium.launch({ executablePath: CHROME });
   try {
     const page = await browser.newPage({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 2 });

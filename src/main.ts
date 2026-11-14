@@ -5,8 +5,19 @@
 
 import './styles.css';
 import { openDb, type Db } from './db';
-import { SAMPLE_PEOPLE, clearAll, seedSample } from './sample';
-import { findPerson, findRelationship, loadChart, neighbours, type Chart, type Person } from './relatives';
+import { clearAll, seedSample } from './sample';
+import {
+  findPerson,
+  findRelationship,
+  hopsOf,
+  ledger,
+  loadChart,
+  neighbours,
+  type BloodVerdict,
+  type Chart,
+  type MarriageVerdict,
+  type Person,
+} from './relatives';
 import { layoutChart, type Layout } from './layout';
 import { renderChart } from './render';
 import { parseAsk } from './ask';
@@ -26,10 +37,12 @@ const el = <T extends Element>(selector: string): T => {
 };
 
 const chartEl = el<HTMLDivElement>('#chart');
-const answerEl = el<HTMLDivElement>('#answer');
-const rosterEl = el<HTMLUListElement>('#roster');
-const rosterMeta = el<HTMLParagraphElement>('#roster-meta');
+const answerEl = el<HTMLElement>('#answer');
+const ledgerEl = el<HTMLUListElement>('#ledger');
+const indexTitle = el<HTMLElement>('#index-title');
+const indexMeta = el<HTMLElement>('#index-meta');
 const hintEl = el<HTMLParagraphElement>('#hint');
+const runRight = el<HTMLElement>('#run-right');
 const queryBox = el<HTMLDetailsElement>('#query');
 const cypherEl = el<HTMLElement>('#cypher');
 const queryMeta = el<HTMLParagraphElement>('#query-meta');
@@ -44,6 +57,21 @@ function esc(value: string): string {
   return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
+function firstName(person: Person): string {
+  return person.name.split(/\s+/)[0] ?? person.name;
+}
+
+function capitalise(text: string): string {
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+function numberWord(n: number): string {
+  const words = ['one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten'];
+  return words[n - 1] ?? String(n);
+}
+
+/* ---------------- the chart ---------------- */
+
 function refresh(): void {
   if (!state) return;
   const chart = loadChart(state.db);
@@ -52,7 +80,7 @@ function refresh(): void {
   state.subjects = state.subjects.filter((id) => findPerson(chart, id));
   if (state.subjects.length < 2) state.path = [];
   draw();
-  paintRoster();
+  paintIndex();
 }
 
 function draw(): void {
@@ -63,82 +91,169 @@ function draw(): void {
     path: state.path,
     subjects: state.subjects,
   });
+
+  const counts = state.subjects.length;
   hintEl.textContent =
-    state.subjects.length === 0
-      ? 'Pick two names to ask about them.'
-      : state.subjects.length === 1
-        ? 'Now pick the second name.'
-        : 'Pick a name to start again.';
+    counts === 0
+      ? 'Pick a name to see how everyone else is related to them.'
+      : counts === 1
+        ? 'Now pick a second name — or read the index on the right.'
+        : 'Pick any name to start again.';
+
+  const born = state.chart.people.map((p) => p.born).filter((y): y is number => typeof y === 'number');
+  const span = born.length > 0 ? `${Math.min(...born)} – ${Math.max(...born)}` : '';
+  runRight.textContent = [span, `${state.layout.rows.length} generations`].filter(Boolean).join(' · ');
 }
 
-function paintRoster(): void {
+/* ---------------- the index: roster when idle, ledger when one name is held ---------------- */
+
+function paintIndex(): void {
   if (!state) return;
-  const people = [...state.chart.people].sort((a, b) => a.name.localeCompare(b.name));
-  rosterMeta.textContent = `${people.length} people, ${state.chart.parents.length} parent links, ${state.chart.partners.length} partnerships — all of it in this tab.`;
-  rosterEl.innerHTML = people
-    .map(
-      (person) =>
-        `<li class="${state?.subjects.includes(person.id) ? 'on' : ''}"><button type="button" data-pick="${esc(person.id)}">${esc(person.name)}</button></li>`,
-    )
+  const subjectId = state.subjects[0];
+  const subject = subjectId ? findPerson(state.chart, subjectId) : null;
+
+  if (!subject) {
+    const people = [...state.chart.people].sort((a, b) => a.name.localeCompare(b.name));
+    indexTitle.textContent = 'The chart';
+    indexMeta.textContent = `${people.length} people, a–z`;
+    ledgerEl.innerHTML = people
+      .map(
+        (person) =>
+          `<li data-id="${esc(person.id)}"><button type="button" data-pick="${esc(person.id)}"><span class="who">${esc(person.name)}</span><span class="leader"></span><span class="rel">${person.born ?? ''}</span></button></li>`,
+      )
+      .join('');
+    return;
+  }
+
+  const rows = ledger(state.db, state.chart, subject.id);
+  indexTitle.textContent = `By relation to ${firstName(subject)}`;
+  indexMeta.textContent = `${rows.length} people, closest first`;
+  ledgerEl.innerHTML = rows
+    .map((row) => {
+      const classes = [row.kind === 'none' ? 'is-none' : '', state?.subjects.includes(row.person.id) ? 'on' : '']
+        .filter(Boolean)
+        .join(' ');
+      return `<li class="${classes}" data-id="${esc(row.person.id)}"><button type="button" data-pick="${esc(row.person.id)}"><span class="who">${esc(row.person.name)}</span><span class="leader"></span><span class="rel">${esc(row.term)}</span></button></li>`;
+    })
     .join('');
 }
 
-function select(id: string): void {
-  if (!state) return;
-  const at = state.subjects.indexOf(id);
-  if (at !== -1) {
-    state.subjects.splice(at, 1);
-    state.path = [];
-    draw();
-    paintRoster();
-    if (state.subjects.length < 2) renderPrompt();
-    return;
-  }
-  if (state.subjects.length >= 2) state.subjects = [];
-  state.subjects.push(id);
-  draw();
-  paintRoster();
-  if (state.subjects.length === 2) {
-    answerPair();
-  } else {
-    renderPrompt();
-  }
+/* ---------------- the answer ---------------- */
+
+function namesIn(path: string[], ancestorId: string): string {
+  if (!state) return '';
+  const chart = state.chart;
+  return path
+    .map((id) => {
+      const person = findPerson(chart, id);
+      if (!person) return '';
+      const label = esc(person.name);
+      return id === ancestorId ? `<span class="via">${label}</span>` : label;
+    })
+    .filter(Boolean)
+    .join(' <span class="arrow">·</span> ');
 }
 
-function renderPrompt(): void {
-  if (!state) return;
-  if (state.subjects.length === 0) {
-    answerEl.innerHTML = `<p class="empty-note">Two names, one question. Try <b>Ada</b> and <b>Theo</b> — or type it: “how are Milo and Rosa related?”</p>`;
-  } else {
-    const person = findPerson(state.chart, state.subjects[0] as string);
-    const n = person ? neighbours(state.db, person.id) : null;
-    answerEl.innerHTML = n
-      ? `<p class="kicker">${esc(person?.name ?? '')}</p>
-         <p class="plain">${describeNeighbours(n)}</p>
-         <p class="empty-note" style="margin-top:12px">Pick one more name to ask how they are related.</p>`
-      : '';
+/**
+ * Two legs, not one long chain: up from the first person to the ancestor, then
+ * down to the second. That shape is the answer, so it is the shape on screen.
+ */
+function legsHtml(path: string[], up: number, ancestorId: string): string {
+  // a direct line has one leg, not two: saying "down: Rosa" on its own is noise
+  if (up === 0 || up === path.length - 1) {
+    return `<div class="legs"><p><span class="tag">line</span><span>${namesIn(path, ancestorId)}</span></p></div>`;
   }
+  const upLeg = path.slice(0, up + 1);
+  const downLeg = path.slice(up);
+  return `<div class="legs">
+      <p><span class="tag">up</span><span>${namesIn(upLeg, ancestorId)}</span></p>
+      <p><span class="tag">down</span><span>${namesIn(downLeg, ancestorId)}</span></p>
+    </div>`;
+}
+
+/** For a tie that runs through a partnership, the role of each step is the point. */
+function hopsHtml(path: string[], ancestorId: string): string {
+  if (!state || path.length === 0) return '';
+  const start = findPerson(state.chart, path[0] as string);
+  if (!start) return '';
+  const parts = [`<span class="hop${path[0] === ancestorId ? ' via' : ''}">${esc(start.name)}</span>`];
+  for (const hop of hopsOf(state.chart, path)) {
+    const cls = hop.to.id === ancestorId ? 'hop via' : 'hop';
+    parts.push(`<span class="${cls}"><span class="role">${esc(hop.role)}</span>${esc(hop.to.name)}</span>`);
+  }
+  return parts.join(' <span class="sep">·</span> ');
+}
+
+function metaLine(parts: string[]): string {
+  return `<p class="meta">${parts.join('<i>·</i>')}</p>`;
+}
+
+function renderBlood(v: BloodVerdict): void {
+  const shared = v.shared === 1 ? 'one ancestor in common' : `${v.shared} ancestors in common`;
+  const sameParentNote =
+    v.up === 1 && v.down === 1 && !v.fullSibling ? ' They share one parent, not two.' : '';
+
+  // A direct line is not a sideways step: say it that way when one leg is zero.
+  let sentence: string;
+  if (v.up === 0) {
+    sentence = `${esc(v.b.name)} sits ${numberWord(v.down)} ${v.down === 1 ? 'generation' : 'generations'} below ${esc(v.a.name)} — a direct line, no sideways step.`;
+  } else if (v.down === 0) {
+    sentence = `${esc(v.a.name)} climbs ${numberWord(v.up)} ${v.up === 1 ? 'generation' : 'generations'} to ${esc(v.b.name)} — a direct line, no sideways step.`;
+  } else {
+    sentence = `${capitalise(numberWord(v.up))} ${v.up === 1 ? 'step' : 'steps'} up from ${esc(firstName(v.a))}, ${numberWord(v.down)} down from ${esc(firstName(v.b))} — the lines meet at <b>${esc(v.ancestor.name)}</b>, ${shared}.${sameParentNote}`;
+  }
+
+  const meta = [`${v.up} up`, `${v.down} down`, shared].filter((part) => !part.startsWith('0 '));
+  answerEl.innerHTML = `
+    <p class="kicker">${esc(v.a.name)} <span class="long">⟶</span> ${esc(v.b.name)}</p>
+    <p class="term${v.forward.term.length >= 22 ? ' tight' : ''}">${esc(v.b.name)} is ${esc(v.a.name)}’s <em>${esc(v.forward.term)}</em>.</p>
+    <p class="why">${sentence}</p>
+    ${metaLine(meta)}
+    ${legsHtml(v.path, v.up, v.ancestor.id)}
+    <p class="mirror">Which makes ${esc(firstName(v.a))} ${esc(v.b.name)}’s ${esc(v.backward.term)}.</p>`;
+}
+
+function renderMarriage(v: MarriageVerdict, elapsed: number): void {
+  const clause = v.aLinked
+    ? `${esc(v.a.name)} is married to <b>${esc(v.anchorA.name)}</b>, and ${esc(v.b.name)} is ${esc(v.anchorA.name)}’s ${esc(v.term.term)}.`
+    : `${esc(v.b.name)} is married to <b>${esc(v.anchorB.name)}</b>, who is ${esc(v.a.name)}’s ${esc(v.term.term)}.`;
+  answerEl.innerHTML = `
+    <p class="kicker">${esc(v.a.name)} <span class="long">⟶</span> ${esc(v.b.name)}</p>
+    <p class="term">No shared ancestor — <em>a tie by marriage</em>.</p>
+    <p class="why">${clause} One side is blood, the other arrives by a partnership, and the chart draws both the same way.</p>
+    ${metaLine(['by marriage', 'no shared blood'])}
+    <p class="hops">${hopsHtml(v.path, '')}</p>`;
+}
+
+function renderProfile(person: Person): void {
+  if (!state) return;
+  const n = neighbours(state.db, person.id);
+  const stamp =
+    person.born && person.died
+      ? `${person.born} – ${person.died}`
+      : person.born
+        ? `born ${person.born}`
+        : person.died
+          ? `died ${person.died}`
+          : 'no dates recorded';
+  const names = (people: Person[]): string => people.map((p) => esc(p.name)).join(', ');
+  const lines: string[] = [];
+  if (n.parents.length > 0) lines.push(`child of ${names(n.parents)}`);
+  if (n.partners.length > 0) lines.push(`partner of ${names(n.partners)}`);
+  if (n.children.length > 0) lines.push(`parent of ${names(n.children)}`);
+  const rows = ledger(state.db, state.chart, person.id);
+  answerEl.innerHTML = `
+    <p class="kicker">${esc(stamp)}</p>
+    <p class="term">${esc(person.name)}</p>
+    <p class="why">${lines.length > 0 ? capitalise(lines.join('; ')) : 'Nobody connected to them yet.'}</p>
+    ${metaLine([`${rows.filter((r) => r.kind === 'blood').length} by blood`, `${rows.filter((r) => r.kind === 'marriage').length} by marriage`])}
+    <p class="mirror">Pick a second name to ask how they are related.</p>`;
   queryBox.hidden = true;
 }
 
-function describeNeighbours(n: ReturnType<typeof neighbours>): string {
-  const list = (people: Person[], plural: string): string =>
-    people.length === 0 ? `no ${plural} in the chart` : `${plural}: ${people.map((p) => `<b>${esc(p.name)}</b>`).join(', ')}`;
-  return [list(n.parents, 'parents'), list(n.children, 'children'), list(n.partners, 'partners')]
-    .map((line) => line.charAt(0).toUpperCase() + line.slice(1))
-    .join('. ')
-    .concat('.');
-}
-
-function chain(path: string[], ancestorId: string | null): string {
-  if (!state) return '';
-  const chart = state.chart;
-  const names = path.map((id) => {
-    const person = findPerson(chart, id);
-    const label = esc(person?.name ?? id);
-    return id === ancestorId ? `<span class="via">${label}</span>` : `<span class="link">${label}</span>`;
-  });
-  return names.join(' <span class="arrow">·</span> ');
+function renderPrompt(): void {
+  answerEl.innerHTML = `<p class="note">Two names, one question. Try <b>Ada</b> and <b>Theo</b> — or type it: “how are Milo and Rosa related?”</p>`;
+  queryBox.hidden = true;
 }
 
 function answerPair(): void {
@@ -149,65 +264,84 @@ function answerPair(): void {
 
   if (v.kind === 'blood') {
     state.path = v.path;
-    const badge = `${v.up} up · ${v.down} down`;
-    const shared = v.shared === 1 ? 'one shared ancestor' : `${v.shared} shared ancestors`;
-    answerEl.innerHTML = `
-      <p class="kicker">${esc(v.a.name)} → ${esc(v.b.name)}</p>
-      <p class="term">${esc(v.b.name)} is ${esc(v.a.name)}’s <em>${esc(v.forward.term)}</em>.</p>
-      <p class="why">Climb ${v.up} ${v.up === 1 ? 'step' : 'steps'} from ${esc(firstName(v.a))} and ${v.down} from ${esc(firstName(v.b))} and the lines meet at <b>${esc(v.ancestor.name)}</b> — ${shared}.${v.up === 1 && v.down === 1 && !v.fullSibling ? ' They share one parent, not two.' : ''}</p>
-      <span class="badge">${badge}</span><span class="badge">${shared}</span>
-      <p class="chain">${chain(v.path, v.ancestor.id)}</p>
-      <p class="mirror">Which makes ${esc(firstName(v.a))} ${esc(v.b.name)}’s ${esc(v.backward.term)}.</p>`;
+    renderBlood(v);
   } else if (v.kind === 'marriage') {
     state.path = v.path;
-    const clause = v.aLinked
-      ? `${esc(v.a.name)} is married to <b>${esc(v.anchorA.name)}</b>, and ${esc(v.b.name)} is ${esc(v.anchorA.name)}’s ${esc(v.term.term)}.`
-      : `${esc(v.b.name)} is married to <b>${esc(v.anchorB.name)}</b>, who is ${esc(v.a.name)}’s ${esc(v.term.term)}.`;
-    answerEl.innerHTML = `
-      <p class="kicker">${esc(v.a.name)} → ${esc(v.b.name)}</p>
-      <p class="term">No shared ancestor — a tie by marriage.</p>
-      <p class="why">${clause} Blood runs through one name; the other arrives by a partnership, and the chart draws both the same way.</p>
-      <span class="badge">by marriage</span><span class="badge">no shared blood</span>
-      <p class="chain">${chain(v.path, null)}</p>`;
+    renderMarriage(v, answer.elapsedMs);
   } else if (v.kind === 'shared-partner') {
     state.path = [v.a.id, v.hinge.id, v.b.id];
     answerEl.innerHTML = `
-      <p class="kicker">${esc(v.a.name)} → ${esc(v.b.name)}</p>
+      <p class="kicker">${esc(v.a.name)} <span class="long">⟶</span> ${esc(v.b.name)}</p>
       <p class="term">Both married to <em>${esc(v.hinge.name)}</em>.</p>
       <p class="why">No shared ancestor either — the only line between them is a partnership they have in common.</p>
-      <span class="badge">by marriage</span>
-      <p class="chain">${chain(state.path, v.hinge.id)}</p>`;
+      ${metaLine(['by marriage'])}
+      <p class="hops">${hopsHtml(state.path, v.hinge.id)}</p>`;
   } else if (v.kind === 'self') {
     state.path = [];
-    answerEl.innerHTML = `<p class="kicker">${esc(v.person.name)}</p><p class="term">That is one person.</p>`;
+    draw();
+    paintIndex();
+    renderProfile(v.person);
+    return;
   } else {
     state.path = [];
     answerEl.innerHTML = `
-      <p class="kicker">${esc(v.a.name)} → ${esc(v.b.name)}</p>
-      <p class="term">Nothing connects them — yet.</p>
-      <p class="empty-note" style="margin-top:12px">Add the missing parent or partner and the line will appear.</p>`;
+      <p class="kicker">${esc(v.a.name)} <span class="long">⟶</span> ${esc(v.b.name)}</p>
+      <p class="term">Nothing connects them — <em>yet</em>.</p>
+      <p class="note">Add the missing parent or partner and the line will appear.</p>`;
   }
 
   draw();
+  paintIndex();
   queryBox.hidden = false;
   cypherEl.textContent = answer.cypher;
   queryMeta.textContent = `${v.kind} · ${answer.elapsedMs.toFixed(1)} ms · in-process WebAssembly, no network`;
 }
 
-function firstName(person: Person): string {
-  return person.name.split(/\s+/)[0] ?? person.name;
+/* ---------------- selection ---------------- */
+
+function select(id: string): void {
+  if (!state) return;
+  const at = state.subjects.indexOf(id);
+  const person = findPerson(state.chart, id);
+
+  if (at !== -1) {
+    state.subjects.splice(at, 1);
+    state.path = [];
+    draw();
+    paintIndex();
+    const remaining = state.subjects[0];
+    if (!remaining) {
+      renderPrompt();
+    } else {
+      const other = findPerson(state.chart, remaining);
+      if (other) renderProfile(other);
+    }
+    return;
+  }
+
+  if (state.subjects.length >= 2) state.subjects = [];
+  state.subjects.push(id);
+  draw();
+  paintIndex();
+  if (state.subjects.length === 2) {
+    answerPair();
+  } else if (person) {
+    renderProfile(person);
+  }
 }
 
 function runAsk(text: string): void {
   if (!state) return;
   const ask = parseAsk(text, state.chart.people);
+
   if (ask.intent === 'relationship') {
     state.subjects = [ask.a, ask.b];
     draw();
-    paintRoster();
+    paintIndex();
     answerPair();
     return;
   }
+
   if (ask.intent === 'neighbours') {
     const person = findPerson(state.chart, ask.who);
     if (!person) return;
@@ -216,23 +350,21 @@ function runAsk(text: string): void {
     state.subjects = [ask.who];
     state.path = [];
     draw();
-    paintRoster();
+    paintIndex();
     answerEl.innerHTML = `
       <p class="kicker">${esc(person.name)}</p>
-      <p class="term">${
-        which.length === 0
-          ? `No ${ask.which} recorded.`
-          : which.map((p) => `<em>${esc(p.name)}</em>`).join(', ')
-      }</p>
-      <p class="why">${which.length === 0 ? 'Add one and it will show on the chart.' : `That is ${which.length === 1 ? 'the only one' : `${which.length} of them`} in this chart.`}</p>`;
+      <p class="term">${which.length === 0 ? `No ${ask.which} recorded.` : which.map((p) => `<em>${esc(p.name)}</em>`).join(', ')}</p>
+      <p class="why">${which.length === 0 ? 'Add one and it will show on the chart.' : `That is ${which.length === 1 ? 'the only one' : `${numberWord(which.length)} of them`} in this chart.`}</p>`;
     queryBox.hidden = true;
     return;
   }
+
   if (ask.intent === 'person') {
     select(ask.who);
     return;
   }
-  answerEl.innerHTML = `<p class="empty-note">I can only read names I know. Ask “how are <b>Ada</b> and <b>Milo</b> related?”, or pick two names on the chart.</p>`;
+
+  answerEl.innerHTML = `<p class="note">I can only read names I know. Ask “how are <b>Ada</b> and <b>Milo</b> related?”, or pick two names on the chart.</p>`;
 }
 
 /* ---------------- editing ---------------- */
@@ -253,25 +385,23 @@ function slug(name: string, taken: Set<string>): string {
   return id;
 }
 
-function fillSelect(select: HTMLSelectElement, people: Person[], skip?: string): void {
-  const options = [`<option value="">—</option>`]
+function fillSelect(target: HTMLSelectElement, people: Person[]): void {
+  target.innerHTML = [`<option value="">—</option>`]
     .concat(
       people
-        .filter((person) => person.id !== skip)
+        .slice()
         .sort((a, b) => a.name.localeCompare(b.name))
         .map((person) => `<option value="${esc(person.id)}">${esc(person.name)}</option>`),
     )
     .join('');
-  select.innerHTML = options;
 }
 
 function openAddDialog(): void {
   if (!state) return;
-  const people = state.chart.people;
   addForm.reset();
-  fillSelect(el<HTMLSelectElement>('#f-mother'), people);
-  fillSelect(el<HTMLSelectElement>('#f-father'), people);
-  fillSelect(el<HTMLSelectElement>('#f-partner'), people);
+  fillSelect(el<HTMLSelectElement>('#f-mother'), state.chart.people);
+  fillSelect(el<HTMLSelectElement>('#f-father'), state.chart.people);
+  fillSelect(el<HTMLSelectElement>('#f-partner'), state.chart.people);
   dialog.showModal();
 }
 
@@ -290,16 +420,13 @@ function addPerson(): void {
   const taken = new Set(state.chart.people.map((person) => person.id));
   const id = slug(name, taken);
 
-  state.db.run(
-    `CREATE (:Person {id: $id, name: $name, sex: $sex, born: $born, died: $died})`,
-    {
-      id,
-      name,
-      sex,
-      born: born ? Number(born) : null,
-      died: died ? Number(died) : null,
-    },
-  );
+  state.db.run('CREATE (:Person {id: $id, name: $name, sex: $sex, born: $born, died: $died})', {
+    id,
+    name,
+    sex,
+    born: born ? Number(born) : null,
+    died: died ? Number(died) : null,
+  });
   for (const parent of [mother, father]) {
     if (!parent) continue;
     state.db.run('MATCH (p:Person {id: $parent}), (c:Person {id: $child}) MERGE (p)-[:PARENT]->(c)', {
@@ -316,7 +443,8 @@ function addPerson(): void {
   state.subjects = [id];
   state.path = [];
   refresh();
-  renderPrompt();
+  const person = findPerson(state.chart, id);
+  if (person) renderProfile(person);
 }
 
 /* ---------------- save / load ---------------- */
@@ -349,16 +477,13 @@ async function loadJson(file: File): Promise<void> {
   if (!Array.isArray(parsed.people)) throw new Error('not a Kin file');
   clearAll(state.db);
   for (const person of parsed.people) {
-    state.db.run(
-      `CREATE (:Person {id: $id, name: $name, sex: $sex, born: $born, died: $died})`,
-      {
-        id: person.id,
-        name: person.name,
-        sex: person.sex,
-        born: person.born ?? null,
-        died: person.died ?? null,
-      },
-    );
+    state.db.run('CREATE (:Person {id: $id, name: $name, sex: $sex, born: $born, died: $died})', {
+      id: person.id,
+      name: person.name,
+      sex: person.sex,
+      born: person.born ?? null,
+      died: person.died ?? null,
+    });
   }
   for (const edge of parsed.parents ?? []) {
     state.db.run('MATCH (p:Person {id: $from}), (c:Person {id: $to}) MERGE (p)-[:PARENT]->(c)', edge);
@@ -405,7 +530,7 @@ async function boot(): Promise<void> {
     if (id) select(id);
   });
 
-  rosterEl.addEventListener('click', (event) => {
+  ledgerEl.addEventListener('click', (event) => {
     const id = (event.target as Element).closest('button')?.getAttribute('data-pick');
     if (id) select(id);
   });
@@ -429,12 +554,8 @@ async function boot(): Promise<void> {
   });
 
   // first look: answer the question the app is named after
-  const ada = SAMPLE_PEOPLE.find((p) => p.id === 'ada');
-  const theo = SAMPLE_PEOPLE.find((p) => p.id === 'theo');
-  if (ada && theo) {
-    state.subjects = [ada.id, theo.id];
-    draw();
-    paintRoster();
+  if (findPerson(chart, 'ada') && findPerson(chart, 'theo')) {
+    state.subjects = ['ada', 'theo'];
     answerPair();
   }
 }

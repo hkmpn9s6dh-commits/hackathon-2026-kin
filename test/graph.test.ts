@@ -5,7 +5,7 @@ import { Database } from '@relate/relate';
 import type { Db } from '../src/db';
 import { SCHEMA, splitStatements } from '../src/cypher';
 import { seedSample } from '../src/sample';
-import { findPerson, findRelationship, loadChart, neighbours } from '../src/relatives';
+import { findPerson, findRelationship, hopsOf, ledger, loadChart, neighbours } from '../src/relatives';
 
 /**
  * The same Cypher the browser runs, run through the Node engine instead of
@@ -165,5 +165,55 @@ describe('editing the chart changes every answer at once', () => {
     const verdict = findRelationship(scratch, 'nina', 'milo').verdict;
     if (verdict.kind !== 'blood') throw new Error(verdict.kind);
     expect(verdict.forward.term).toBe('brother');
+  });
+});
+
+describe('the index: everyone, by relation', () => {
+  it('sorts by how close they are, and names the tie', () => {
+    const rows = ledger(db, loadChart(db), 'ada');
+    expect(rows[0]?.person.id).toBe('ada');
+    expect(rows[0]?.term).toBe('themselves');
+    expect(rows[1]?.person.id).toBe('daan');
+    expect(rows[1]?.term).toBe('father');
+    const theo = rows.find((row) => row.person.id === 'theo');
+    expect(theo?.term).toBe('second cousin');
+    expect(theo?.gap).toBe(6);
+    // gaps never go down as you read the list
+    const gaps = rows.map((row) => row.gap);
+    expect([...gaps].sort((a, b) => a - b)).toEqual(gaps);
+  });
+
+  it('covers every person in the chart exactly once', () => {
+    const chart = loadChart(db);
+    const rows = ledger(db, chart, 'rosa');
+    expect(rows).toHaveLength(chart.people.length);
+    expect(new Set(rows.map((row) => row.person.id)).size).toBe(chart.people.length);
+  });
+});
+
+describe('the chain, with every step named', () => {
+  it('names each hop from the point of view of the step before it', () => {
+    const chart = loadChart(db);
+    const verdict = findRelationship(db, 'ada', 'theo').verdict;
+    if (verdict.kind !== 'blood') throw new Error(verdict.kind);
+    const hops = hopsOf(chart, verdict.path);
+    expect(hops.map((hop) => hop.role)).toEqual([
+      'father',
+      'father',
+      'father',
+      'daughter',
+      'daughter',
+      'son',
+    ]);
+    expect(hops[0]?.to.id).toBe('daan');
+    expect(hops[hops.length - 1]?.to.id).toBe('theo');
+  });
+
+  it('calls a marriage a partnership', () => {
+    const chart = loadChart(db);
+    const verdict = findRelationship(db, 'wilma', 'suze').verdict;
+    if (verdict.kind !== 'marriage') throw new Error(verdict.kind);
+    const hops = hopsOf(chart, verdict.path);
+    expect(hops[0]?.role).toBe('partner');
   });
 });
